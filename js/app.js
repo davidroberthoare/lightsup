@@ -129,7 +129,7 @@ async function createFixture(item) {
         const dimmer = await loadSVG('/img/symbols/util/dimmer.svg');
         dimmer.set({
             left: 0,
-            top: 0,
+            top: -10,
             originX: 'center',
             originY: 'center',
         });
@@ -137,7 +137,7 @@ async function createFixture(item) {
         // Create the dimmer text
         const dimmerText = new fabric.Text(item.dimmer, {
             left: 0,
-            top: 0,
+            top: -10,
             fontSize: FONT_SIZE,
             fontFamily: FONT,
             fill: '#000000',
@@ -145,18 +145,11 @@ async function createFixture(item) {
             originY: 'center',
         });
 
-        // Group dimmer elements together
-        const dimmerGroup = new fabric.Group([dimmer, dimmerText], {
-            left: 0,
-            top: -10,
-            originX: 'center',
-            originY: 'center',
-        });
 
         // Create the channel symbol (circle)
         const channel = new fabric.Circle({
             left: 0,
-            top: 0,
+            top: -30,
             radius: 10,
             fill: false,
             stroke: 'black',
@@ -168,20 +161,13 @@ async function createFixture(item) {
         // Create the channel text
         const channelText = new fabric.Text(item.channel, {
             left: 0,
-            top: 0,
+            top: -30,
             fontSize: FONT_SIZE,
             fontFamily: FONT,
             originX: 'center',
             originY: 'center',
         });
 
-        // Group channel elements together
-        const channelGroup = new fabric.Group([channel, channelText], {
-            left: 0,
-            top: -30,
-            originX: 'center',
-            originY: 'center',
-        });
 
         // Create the gel text
         const gel = new fabric.Text(item.gel, {
@@ -195,7 +181,7 @@ async function createFixture(item) {
         });
 
         // Group all elements together
-        const group = new fabric.Group([symbol, number, label, dimmerGroup, channelGroup, gel], {
+        const group = new fabric.Group([symbol, number, label, dimmer, dimmerText, channel, channelText, gel], {
             left: 0,
             top: 0,
             lockScalingX:true,
@@ -223,6 +209,17 @@ function drawItem(item) {
                 angle: item.angle,
                 id: item.id,
             });
+
+            // flip text if the fixture is upside down
+            if(item.angle > 90 && item.angle < 270){
+                f._objects.forEach(subObject => {
+                    if (subObject.type === 'text') { // Check if the sub-object is of type 'text'
+                        subObject.set('flipX', true); 
+                        subObject.set('flipY', true); 
+                    }
+                });
+            }
+
             canvas.add(f);
         });
     }
@@ -465,6 +462,18 @@ canvas.on('object:modified', function (e) {
     console.log("object modified", e.target);
     const obj = e.target;
     updateItemPosition(obj.id, obj.left, obj.top, obj.angle);
+});
+
+// when an object is rotated, correct the text orientation
+canvas.on('object:rotating', function (e) {
+    const obj = e.target;
+    // flip text if the fixture is upside down
+    obj._objects.forEach(subObject => {
+        if (subObject.type === 'text') { // Check if the sub-object is of type 'text'
+            subObject.set('flipX', (obj.angle > 90 && obj.angle < 270)); 
+            subObject.set('flipY', (obj.angle > 90 && obj.angle < 270)); 
+        }
+    });
 });
 
 
