@@ -24,6 +24,7 @@ const canvas = new fabric.Canvas(document.getElementById('paper'), {
     width: container.offsetWidth,
     height: container.offsetHeight,
     imageSmoothingEnabled: false,
+    fireMiddleClick : true,
 });
 canvas.setZoom(1.5);// initial zoom level
 
@@ -404,6 +405,10 @@ $("#inspector input").change(function () {
     }, 100);
 });
 
+
+// ////////////////////////////////////////////////////////////////////////////////
+// MOUSE EVENTS
+
 // canvas scrolling zoom
 canvas.on('mouse:wheel', (opt) => {
     opt.e.preventDefault();
@@ -420,6 +425,39 @@ canvas.on('mouse:wheel', (opt) => {
     //pan canvas
     canvas.relativePan({ x: -opt.e.deltaX, y: -opt.e.deltaY })
 })
+
+
+// middle mouse button panning
+let isPanning = false;
+let lastPosX = 0;
+let lastPosY = 0;
+
+canvas.on('mouse:down', (opt) => {
+    // console.log("mouse down", opt.e.button);
+    if (opt.e.button === 1) { // Middle mouse button
+        isPanning = true;
+        lastPosX = opt.e.clientX;
+        lastPosY = opt.e.clientY;
+    }
+});
+
+canvas.on('mouse:move', (opt) => {
+    // console.log("mouse move", opt.e);
+    if (isPanning) {
+        const e = opt.e;
+        const vpt = canvas.viewportTransform;
+        vpt[4] += e.clientX - lastPosX;
+        vpt[5] += e.clientY - lastPosY;
+        canvas.requestRenderAll();
+        lastPosX = e.clientX;
+        lastPosY = e.clientY;
+    }
+});
+
+canvas.on('mouse:up', (opt) => {
+    // console.log("mouse up", opt.e.button);
+    isPanning = false;
+});
 
 
 // when an object is changed, update the DB
