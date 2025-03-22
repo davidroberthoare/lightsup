@@ -10,6 +10,7 @@ const MODE = {action: "default", "type": null, "subtype": null}; // action: add,
 
 // GLOBALS
 let selectedItems = []; //used in selection and editing functions to temporarily remember selected items
+let childFixtures = []; //used in selection and editing functions to temporarily remember fixtures that intersect with position items
 
 // DRAWING SCALE IS MEASURED IN CENTIMETERS
 const GRID_OPTIONS = {
@@ -102,6 +103,7 @@ async function createFixture(item) {
             top: 0,
             originX: 'center',
             originY: 'top',
+            fill: 'white',
         });
 
         // Create the number text
@@ -134,6 +136,7 @@ async function createFixture(item) {
             top: -10,
             originX: 'center',
             originY: 'center',
+            fill: 'white',
         });
 
         // Create the dimmer text
@@ -153,7 +156,7 @@ async function createFixture(item) {
             left: 0,
             top: -30,
             radius: 10,
-            fill: false,
+            fill: 'white',
             stroke: 'black',
             strokeWidth: 0.5,
             originX: 'center',
@@ -188,7 +191,68 @@ async function createFixture(item) {
             top: 0,
             lockScalingX:true,
             lockScalingY:true,
+            itemType: 'fixture'
         });
+
+        return group;
+
+    } catch (error) {
+        console.error('Error creating fixture:', error);
+        return false;
+    }
+}
+
+
+async function createPosition(item) {
+    // console.log("creating fixture...", item)
+    try {
+
+        const symbol = new fabric.Rect({
+            left: 0,
+            width: 333,
+            top: 0,
+            height: 5,
+            fill: 'white',
+            stroke: 'black',
+            strokeWidth: 0.5,
+            originX: 'center',
+            originY: 'center',
+        });
+
+        // Create the label
+        const label = new fabric.Text(item.label, {
+            left: 0,
+            top: -8,
+            fontSize: FONT_SIZE-2,
+            fontFamily: FONT,
+            fill: '#000000',
+            originX: 'center',
+            originY: 'center',
+        });
+
+
+        // Group all elements together
+        const group = new fabric.Group([symbol, label], {
+            left: 0,
+            top: 0,
+            // lockScalingX:true,
+            lockScalingY:true,
+            itemType: 'position'
+        });
+
+
+        group.adjustScaling = () => {
+            const inverseScaleX = 1 / group.scaleX;
+            const inverseScaleY = 1 / group.scaleY;
+            // console.log(`group.scaleX: ${group.scaleX}, group.scaleY: ${group.scaleY} inverseScaleX: ${inverseScaleX}, inverseScaleY: ${inverseScaleY}`);
+            label.set({scaleX: inverseScaleX, scaleY: inverseScaleY});
+            canvas.renderAll();
+        }
+
+        group.on("scaling", () => {
+            group.adjustScaling();
+        });
+
 
         return group;
 
@@ -202,19 +266,21 @@ async function createFixture(item) {
 
 // add shapes
 function drawItem(item) {
-    // const newShape = new shapes.custom[item.type]();
+    // console.log("drawing item", item);
     if(item.type=="fixture"){
-        createFixture(item).then((f) => {
-            f.set({
+        createFixture(item).then((i) => {
+            i.set({
                 left: item.x,
                 top: item.y,
+                scaleX: item.scalex || 1,
+                scaleY: item.scaley || 1,
                 angle: item.angle,
                 id: item.id,
             });
 
             // flip text if the fixture is upside down
             if(item.angle > 90 && item.angle < 270){
-                f._objects.forEach(subObject => {
+                i._objects.forEach(subObject => {
                     if (subObject.type === 'text') { // Check if the sub-object is of type 'text'
                         subObject.set('flipX', true); 
                         subObject.set('flipY', true); 
@@ -222,7 +288,88 @@ function drawItem(item) {
                 });
             }
 
-            canvas.add(f);
+            canvas.add(i);
+        });
+    }
+
+    else if(item.type=="position"){
+        createPosition(item).then((i) => {
+            i.set({
+                left: item.x,
+                top: item.y,
+                scaleX: item.scalex || 1,
+                scaleY: item.scaley || 1,
+                angle: item.angle,
+                id: item.id,
+            });
+
+            // flip text if the fixture is upside down
+            if(item.angle > 90 && item.angle < 270){
+                i._objects.forEach(subObject => {
+                    if (subObject.type === 'text') { // Check if the sub-object is of type 'text'
+                        subObject.set('flipX', true); 
+                        subObject.set('flipY', true); 
+                    }
+                });
+            }
+
+            // functions for moving related child fixtures
+            let originalPositions = []; // To store the original positions of childFixtures
+            i.on("mousedown", function (event) {
+                // console.log("position MouseDOWN Evt", event)
+                const position = event.target;
+                childFixtures = [];
+                // console.log("Checking intersections for position", position)
+                canvas.getObjects().forEach(obj => {
+                    if(obj.id==position.id) return; //don't include itself
+                    if(obj.itemType!='fixture') return; //don't include anything other than fixtures
+
+                    if(position.intersectsWithObject(obj)){
+                        // console.log("found intersection!")
+                        childFixtures.push(obj); 
+                    }
+                });
+                // console.log("child fixtures", childFixtures)
+
+                // console.log("storing original positions")
+                // Store the original positions of childFixtures when movement starts
+                originalPositions = childFixtures.map((obj) => ({
+                    obj: obj,
+                    left: obj.left,
+                    top: obj.top,
+                }));
+            });
+
+            i.on("moving", function(event){
+                // console.log("MOVING", event)
+                if(childFixtures.length>0){
+                    const deltaX = event.transform.target.left - event.transform.original.left;
+                    const deltaY = event.transform.target.top - event.transform.original.top;
+                    // console.log("deltas", deltaX, deltaY)
+                    childFixtures.forEach((obj, index) => {
+                        const original = originalPositions[index];
+                        obj.left = original.left + deltaX;
+                        obj.top = original.top + deltaY;
+                        obj.setCoords(); // Update the object's coordinates
+                    });
+                    canvas.renderAll();
+                }
+            })
+
+            i.on("mouseup", function(event){
+                // console.log("Position MouseUP", event);
+                if(childFixtures.length>0){
+                    childFixtures.forEach((obj)=>{
+                        // console.log("triggering modified object", obj)
+                        canvas.fire('object:modified', {target: obj});
+                    });
+                }
+                childFixtures = [];//clear it
+                
+            })
+
+            canvas.add(i);
+            i.adjustScaling();
         });
     }
 
@@ -240,8 +387,11 @@ function drawItem(item) {
 
 
 // Initialize the database
-function initDB() {
-    alasql('CREATE TABLE IF NOT EXISTS items (id STRING PRIMARY KEY, type STRING, shape STRING, x INT, y INT, angle INT, number INT, label STRING, channel STRING, dimmer STRING, gel STRING)');
+function initDB(wipe) {
+    if(wipe===true){
+        alasql("DROP TABLE items");
+    }
+    alasql('CREATE TABLE IF NOT EXISTS items (id STRING PRIMARY KEY, type STRING, shape STRING, x INT, y INT, angle INT, scalex FLOAT, scaley FLOAT, number INT, label STRING, channel STRING, dimmer STRING, gel STRING)');
     alasql('DELETE FROM items');
 }
 
@@ -292,9 +442,9 @@ function redrawItem(id){
     canvas.requestRenderAll();
 }
 
-function updateItemPosition(id, x, y, angle) {
+function updateItemPosition(id, x, y, scalex, scaley, angle) {
     // console.log("updating item position", id, x, y, angle);
-    alasql('UPDATE items SET x = ?, y = ?, angle = ? WHERE id = ?', [x, y, angle, id]);
+    alasql('UPDATE items SET x = ?, y = ?, scalex = ?, scaley = ?, angle = ? WHERE id = ?', [x, y, scalex, scaley, angle, id]);
 }
 
 function updateItemData(id, name, value) {
@@ -302,10 +452,10 @@ function updateItemData(id, name, value) {
     alasql(`UPDATE items SET ${name} = ? WHERE id = ?`, [value, id]);
 }
 
-function createItem(type, shape, x, y, angle, number, label, channel, dimmer, gel) {
-    console.log("creating item", type, shape, x, y, angle, number, label, channel, dimmer, gel);
+function createItem(type, shape, x, y, scalex, scaley, angle, number, label, channel, dimmer, gel) {
+    console.log("creating item", type, shape, x, y, scalex, scaley, angle, number, label, channel, dimmer, gel);
     try {
-        alasql('INSERT INTO items (id, type, shape, x, y, angle, number, label, channel, dimmer, gel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [generateRandomString(12), type, shape, x, y, angle, number, label, channel, dimmer, gel]);
+        alasql('INSERT INTO items (id, type, shape, x, y, scalex, scaley, angle, number, label, channel, dimmer, gel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [generateRandomString(12), type, shape, x, y, scalex, scaley, angle, number, label, channel, dimmer, gel]);
     }
     catch (error) { console.error("Error creating item", error); }
     
@@ -401,6 +551,15 @@ function updateSelection(evt) {
 
     updateInspector(ids);
 
+
+    // if there's only one object selected, and it's a position item, then find it's child-fixtures, if any, via intersection
+    // if(evt.selected.length==1 && evt.selected[0].itemType == 'position'){
+    //     const position = evt.selected[0];   //assign the position for convenience
+        
+    // }else{
+    //     console.log("multiple objects, or not a position, so not checking")
+    // }
+
 }
 
 
@@ -457,6 +616,7 @@ canvas.on('mouse:down', (opt) => {
         lastPosX = opt.e.clientX;
         lastPosY = opt.e.clientY;
     }
+
 });
 
 canvas.on('mouse:move', (opt) => {
@@ -475,6 +635,10 @@ canvas.on('mouse:move', (opt) => {
 canvas.on('mouse:up', (opt) => {
     // console.log("mouse up", opt.e.button);
     isPanning = false;
+    if(MODE.action=="insert"){
+        createItem(MODE.type, MODE.subtype, evt.scenePoint.x, evt.scenePoint.y, 1.0, 1.0, 0, 0,  "", "", "", "");
+        drawLayoutFromDB();
+    }
 });
 
 
@@ -482,7 +646,7 @@ canvas.on('mouse:up', (opt) => {
 canvas.on('object:modified', function (e) {
     console.log("object modified", e.target);
     const obj = e.target;
-    updateItemPosition(obj.id, obj.left, obj.top, obj.angle);
+    updateItemPosition(obj.id, obj.left, obj.top, obj.scaleX, obj.scaleY, obj.angle);
 });
 
 // when an object is rotated, correct the text orientation
@@ -498,18 +662,6 @@ canvas.on('object:rotating', function (e) {
 });
 
 
-// canvas.on('mouse:down', function (evt) {
-//     console.log("mouse down", evt);
-// });
-
-
-canvas.on('mouse:up', function (evt) {
-    console.log("mouse up", evt);
-    if(MODE.action=="insert"){
-        createItem("fixture", MODE.subtype, evt.scenePoint.x, evt.scenePoint.y, 0, 0, "", "", "", "");
-        drawLayoutFromDB();
-    }
-});
 
 // when items are selected
 canvas.on('selection:updated', function(evt) {
@@ -546,9 +698,8 @@ $("#load").click(function () {
 
 $("#menu_insert a").click(function () {
     let type = $(this).attr("data-type");
-    switchMode("insert", 'fixture', type);
-    // createItem("fixture", type, 200, 200, 0, 0, "", "", "", "");
-    // drawLayoutFromDB();
+    let subtype = $(this).attr("data-subtype");
+    switchMode("insert", type, subtype);
 });
 
 
