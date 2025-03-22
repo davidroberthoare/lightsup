@@ -5,6 +5,8 @@ const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 20;
 const FONT_SIZE = 8;
 const FONT = "Arial";
+const MODE = {action: "default", "type": null, "subtype": null}; // action: add, edit, delete, select
+
 
 // GLOBALS
 let selectedItems = []; //used in selection and editing functions to temporarily remember selected items
@@ -287,6 +289,7 @@ function redrawItem(id){
             drawItem(item);
         }
     });
+    canvas.requestRenderAll();
 }
 
 function updateItemPosition(id, x, y, angle) {
@@ -316,6 +319,24 @@ function deleteItem(id) {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UI FUNCTIONS
+
+function switchMode(mode, type, subtype){
+    console.log("switching mode", mode, type, subtype);
+    MODE.action = mode;
+    MODE.type = type;
+    MODE.subtype = subtype;
+
+    // reset any changeable aspects to 'default' first
+    $(".navbar-item").removeClass("selected");
+    canvas.defaultCursor = "pointer";
+    
+    // change the UI based on the new mode
+    
+    if(mode=="insert"){
+        $('#menu_insert').addClass("selected");
+        canvas.defaultCursor = "crosshair";
+    }
+}
 
 // Delete selected items
 function deleteSelected() {   
@@ -399,7 +420,7 @@ $("#inspector input").change(function () {
 
     setTimeout(() => {
         selectMultipleObjects(selectedItems);
-    }, 100);
+    }, 500);
 });
 
 
@@ -481,6 +502,15 @@ canvas.on('object:rotating', function (e) {
 //     console.log("mouse down", evt);
 // });
 
+
+canvas.on('mouse:up', function (evt) {
+    console.log("mouse up", evt);
+    if(MODE.action=="insert"){
+        createItem("fixture", MODE.subtype, evt.scenePoint.x, evt.scenePoint.y, 0, 0, "", "", "", "");
+        drawLayoutFromDB();
+    }
+});
+
 // when items are selected
 canvas.on('selection:updated', function(evt) {
     updateSelection(evt);
@@ -516,8 +546,9 @@ $("#load").click(function () {
 
 $("#menu_insert a").click(function () {
     let type = $(this).attr("data-type");
-    createItem("fixture", type, 200, 200, 0, 0, "", "", "", "");
-    drawLayoutFromDB();
+    switchMode("insert", 'fixture', type);
+    // createItem("fixture", type, 200, 200, 0, 0, "", "", "", "");
+    // drawLayoutFromDB();
 });
 
 
@@ -535,6 +566,9 @@ $(document).keydown(function (e) {
         if(!$("#inspector input").is(":focus")){
             deleteSelected();
         }
+    }
+    else if (e.key === 'Escape') {
+        switchMode("default", null, null);
     }
 });
 

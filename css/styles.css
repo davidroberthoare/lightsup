@@ -22,6 +22,36 @@ body {
     overflow: hidden;
 }
 
+.navbar-item.selected {
+    background-color: #f2ff3a;
+    /* color: white; */
+}
+
+/* NESTED DROPDOWN */
+.nested.dropdown:hover > .dropdown-menu {
+    display: block;
+  }
+  .nested.dropdown .dropdown-menu {
+    top: -12px;
+    margin-left: 100%;
+  }
+  .nested.dropdown .dropdown-trigger button::after {
+  
+  }
+  .nested.dropdown .dropdown-trigger button {
+    padding: 0px 0px;
+    border: 0px;
+    font-size: 14px;
+    font-weight: 400;  
+  }
+
+  .nested.dropdown .icon{
+    color: var(--bulma-navbar-dropdown-arrow);
+    /* font-weight: bold; */
+  }
+  /* END NESTED DROPDOWN */
+
+
 #menu {
     height: var(--bar_height);
     line-height: var(--bar_height);
