@@ -633,7 +633,7 @@ canvas.on('mouse:move', (opt) => {
 });
 
 canvas.on('mouse:up', (opt) => {
-    console.log("mouse up", opt.e);
+    // console.log("mouse up", opt.e);
     const evt = opt;
     isPanning = false;
     if(MODE.action=="insert"){
