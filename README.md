@@ -12,7 +12,7 @@ LightsUP is a simple theatrical lighting drafting program. This is a work in pro
 
 ## Acknowledgements
 
-Thanks to the [FabricJS](https://fabricjs.com/) and [AlaSQL](https://alasql.org/) teams for their amazing work!
+Thanks to the [FabricJS](https://fabricjs.com/), [AlaSQL](https://alasql.org/) and [Tabulator](https://tabulator.info/) teams for their amazing work!
 
 
 ## Installation
