@@ -582,12 +582,33 @@ function updateSelection(evt) {
 
 function updatePositionNumbering(movedFixture, positionId){
     console.log("updating position numbering", movedFixture.id, positionId);
-    const posFixtures = alasql('SELECT * FROM items WHERE position = ? ORDER BY x DESC, y DESC', [positionId]);
-    // console.log("fixtures", posFixtures);
-    posFixtures.forEach((fixture, index) => {
-        alasql('UPDATE items SET number = ? WHERE id = ?', [index+1, fixture.id]);
-        updateNumberingText(fixture.id, index+1);
-    });
+    if(positionId){
+        const posFixtures = alasql('SELECT * FROM items WHERE position = ? ORDER BY x DESC, y DESC', [positionId]);
+        // console.log("fixtures", posFixtures);
+        posFixtures.forEach((fixture, index) => {
+            alasql('UPDATE items SET number = ? WHERE id = ?', [index+1, fixture.id]);
+            updateNumberingText(fixture.id, index+1);
+        });
+    }else{
+        //if this object used to have a position, update the numbering of the remaining fixtures in that position
+        if(movedFixture.position){
+            console.log("no position found, renumbering fixtures in previous position");
+            const posFixtures = alasql('SELECT * FROM items WHERE position = ? ORDER BY x DESC, y DESC', [movedFixture.position]);
+            // console.log("fixtures", posFixtures);
+            posFixtures.forEach((fixture, index) => {
+                alasql('UPDATE items SET number = ? WHERE id = ?', [index+1, fixture.id]);
+                updateNumberingText(fixture.id, index+1);
+            });
+            console.log("setting position to null");
+            //and also set this item's position to null
+            alasql('UPDATE items SET position = ? WHERE id = ?', ["", movedFixture.id]);
+            updateNumberingText(movedFixture.id, "");
+        }else{
+            //if this object didn't have a previous position, and is still not intersecting with a position, set its number to "" just to be sure
+            alasql('UPDATE items SET number = ? WHERE id = ?', ["", movedFixture.id]);
+            updateNumberingText(movedFixture.id, "");
+        }
+    }
 }
 
 
@@ -709,9 +730,8 @@ canvas.on('object:modified', function (e) {
         }
         if(found===false){
             updateItemData(obj.id, "position", "");
-            updatePositionNumbering(i, false);
+            updatePositionNumbering(obj, false);
         }
-        // drawLayoutFromDB();
     }
 });
 
