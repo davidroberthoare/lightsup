@@ -116,6 +116,7 @@ async function createFixture(item) {
             fill: '#000000',
             originX: 'center',
             originY: 'center',
+            itemType: 'number'
         });
 
         // Create the label
@@ -276,6 +277,7 @@ function drawItem(item) {
                 scaleY: item.scaley || 1,
                 angle: item.angle,
                 id: item.id,
+                position: item.position
             });
 
             // flip text if the fixture is upside down
@@ -288,7 +290,10 @@ function drawItem(item) {
                 });
             }
 
+
             canvas.add(i);
+
+            console.log("fixture drawn", i);
         });
     }
 
@@ -370,11 +375,12 @@ function drawItem(item) {
 
             canvas.add(i);
             i.adjustScaling();
+
+            console.log("position drawn", i);
         });
     }
 
 }
-
 
 
 
@@ -391,7 +397,22 @@ function initDB(wipe) {
     if(wipe===true){
         alasql("DROP TABLE items");
     }
-    alasql('CREATE TABLE IF NOT EXISTS items (id STRING PRIMARY KEY, type STRING, shape STRING, x INT, y INT, angle INT, scalex FLOAT, scaley FLOAT, number INT, label STRING, channel STRING, dimmer STRING, gel STRING)');
+    alasql(`CREATE TABLE IF NOT EXISTS items (
+        id STRING PRIMARY KEY,
+        type STRING, 
+        shape STRING, 
+        x INT, 
+        y INT, 
+        angle INT, 
+        scalex FLOAT, 
+        scaley FLOAT,
+        position STRING, 
+        number INT, 
+        label STRING, 
+        channel STRING, 
+        dimmer STRING, 
+        gel STRING
+        )`);
     alasql('DELETE FROM items');
 }
 
@@ -429,20 +450,24 @@ function drawLayoutFromDB() {
     });
 }
 
-// Function to redraw a single item
+// Function to redraw a single item from DB data
 function redrawItem(id){
     const item = alasql('SELECT * FROM items WHERE id = ?', [id])[0];
     console.log("redrawing item", id, item);
-    canvas.getObjects().forEach(obj => {
-        if(obj.id === id){
-            canvas.remove(obj);
-            drawItem(item);
-        }
-    });
-    canvas.requestRenderAll();
+    try{
+        let obj = getObjectById(id)
+        console.log("found item to remove", obj);
+        canvas.remove(obj);
+        canvas.renderAll();
+    }catch(error){
+        console.error("Error removing object", id, error);
+    }
+    drawItem(item);
+    canvas.renderAll();
+    // console.log("redrew item", item);
 }
 
-function updateItemPosition(id, x, y, scalex, scaley, angle) {
+function updateItemLocation(id, x, y, scalex, scaley, angle) {
     // console.log("updating item position", id, x, y, angle);
     alasql('UPDATE items SET x = ?, y = ?, scalex = ?, scaley = ?, angle = ? WHERE id = ?', [x, y, scalex, scaley, angle, id]);
 }
@@ -455,7 +480,7 @@ function updateItemData(id, name, value) {
 function createItem(type, shape, x, y, scalex, scaley, angle, number, label, channel, dimmer, gel) {
     console.log("creating item", type, shape, x, y, scalex, scaley, angle, number, label, channel, dimmer, gel);
     try {
-        alasql('INSERT INTO items (id, type, shape, x, y, scalex, scaley, angle, number, label, channel, dimmer, gel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [generateRandomString(12), type, shape, x, y, scalex, scaley, angle, number, label, channel, dimmer, gel]);
+        alasql('INSERT INTO items (id, type, shape, x, y, scalex, scaley, angle, position, number, label, channel, dimmer, gel) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [generateRandomString(12), type, shape, x, y, scalex, scaley, angle, "", number, label, channel, dimmer, gel]);
     }
     catch (error) { console.error("Error creating item", error); }
     
@@ -552,14 +577,31 @@ function updateSelection(evt) {
     updateInspector(ids);
 
 
-    // if there's only one object selected, and it's a position item, then find it's child-fixtures, if any, via intersection
-    // if(evt.selected.length==1 && evt.selected[0].itemType == 'position'){
-    //     const position = evt.selected[0];   //assign the position for convenience
-        
-    // }else{
-    //     console.log("multiple objects, or not a position, so not checking")
-    // }
+}
 
+
+function updatePositionNumbering(movedFixture, positionId){
+    console.log("updating position numbering", movedFixture.id, positionId);
+    const posFixtures = alasql('SELECT * FROM items WHERE position = ? ORDER BY x, y', [positionId]);
+    // console.log("fixtures", posFixtures);
+    posFixtures.forEach((fixture, index) => {
+        alasql('UPDATE items SET number = ? WHERE id = ?', [index+1, fixture.id]);
+        updateNumberingText(fixture.id, index+1);
+    });
+}
+
+
+function updateNumberingText(id, number){
+    // console.log("updating numbering text", id, number);
+    const obj = getObjectById(id);
+    obj._objects.forEach(subObject => {
+        // console.log("subObject", subObject);
+        if (subObject.itemType === 'number') { // Check if the sub-object is of type 'text'
+            // console.log("found one!", subObject)
+            subObject.set('text', String(number));
+        }
+    });
+    canvas.renderAll();
 }
 
 
@@ -626,7 +668,7 @@ canvas.on('mouse:move', (opt) => {
         const vpt = canvas.viewportTransform;
         vpt[4] += e.clientX - lastPosX;
         vpt[5] += e.clientY - lastPosY;
-        canvas.requestRenderAll();
+        canvas.renderAll();
         lastPosX = e.clientX;
         lastPosY = e.clientY;
     }
@@ -645,9 +687,32 @@ canvas.on('mouse:up', (opt) => {
 
 // when an object is changed, update the DB
 canvas.on('object:modified', function (e) {
-    console.log("object modified", e.target);
+    console.log("object modified", e);
     const obj = e.target;
-    updateItemPosition(obj.id, obj.left, obj.top, obj.scaleX, obj.scaleY, obj.angle);
+    updateItemLocation(obj.id, obj.left, obj.top, obj.scaleX, obj.scaleY, obj.angle);
+
+    if(obj.itemType=="fixture"){
+        // check if the fixture is intersecting with a position
+        const objects = canvas.getObjects();
+        var found = false;
+        for (let j = 0; j < objects.length; j++) {
+            const position = objects[j];
+            if(position.itemType != 'position') continue; // don't include anything other than positions
+            if(obj.intersectsWithObject(position)){
+                console.log("found intersection with Position!");
+                console.log("updating position data", obj.id, position.id);
+                updateItemData(obj.id, "position", position.id);
+                updatePositionNumbering(obj, position.id);
+                found = true;
+                break; // stop the loop completely
+            }
+        }
+        if(found===false){
+            updateItemData(obj.id, "position", "");
+            updatePositionNumbering(i, false);
+        }
+        // drawLayoutFromDB();
+    }
 });
 
 // when an object is rotated, correct the text orientation
@@ -739,6 +804,17 @@ $(document).ready(function () {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UTILITIES
+
+//fetch a single object by ID
+function getObjectById(id) {
+    let obj = null;
+    canvas.getObjects().forEach((object) => {
+        if (object.id === id) {
+            obj = object;
+        }
+    });
+    return obj;
+}
 
 // Function to select multiple objects programmatically
 function selectMultipleObjects(ids) {
