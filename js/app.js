@@ -582,7 +582,7 @@ function updateSelection(evt) {
 
 function updatePositionNumbering(movedFixture, positionId){
     console.log("updating position numbering", movedFixture.id, positionId);
-    const posFixtures = alasql('SELECT * FROM items WHERE position = ? ORDER BY x, y', [positionId]);
+    const posFixtures = alasql('SELECT * FROM items WHERE position = ? ORDER BY x DESC, y DESC', [positionId]);
     // console.log("fixtures", posFixtures);
     posFixtures.forEach((fixture, index) => {
         alasql('UPDATE items SET number = ? WHERE id = ?', [index+1, fixture.id]);
