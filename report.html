@@ -14,11 +14,40 @@
       padding: 20px;
       width:auto;
     }
+    header{
+      display: flex;
+      justify-content: space-between;
+    }
+    #title_block{
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-end;
+    }
+    .title_row{
+      display: flex;
+    }
+    .title_row > div{
+      margin: 0 10px;
+    }
   </style>
 </head>
 
 <body>
-  <h3 id="report_title">Instrument Schedule</h3>
+  <header>
+    <h3 id="report_title">Instrument Schedule</h3>
+    <div id="title_block">
+      <div class="title_row">
+        <div data-id="name"></div>
+        <div data-id="company"></div>
+      </div>
+      <div class="title_row">
+        <div data-id="venue"></div>
+        <div data-id="date"></div>
+        <div data-id="designer"></div>
+      </div>
+    </div>
+  </header>
   <div id="report"></div>
 
 

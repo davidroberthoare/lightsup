@@ -138,6 +138,6 @@ image.selected {
 }
 
 
-#inspector .field-label .label {
-    text-align: left;
+#inspector .field-label .label, #show_inspector .field-label .label {
+    text-align: left !important;
 }

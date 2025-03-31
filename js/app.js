@@ -33,6 +33,25 @@ canvas.setZoom(1.5);// initial zoom level
 
 
 
+const default_show = {
+    id: 'default',
+    name: "My Show",
+    company: "A Great Company",
+    venue: "Grand Theatre",
+    designer: "D. Signer",
+    date: "Jan 1, 2030"
+};
+
+var current_show_id = localStorage.getItem('current_show_id') || 'default';
+
+// Save the current_show_id to localStorage whenever it changes
+function setCurrentShowId(showId) {
+  current_show_id = showId;
+  localStorage.setItem('current_show_id', showId);
+}
+
+
+
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -128,6 +147,7 @@ async function createFixture(item) {
             fill: '#000000',
             originX: 'center',
             originY: 'center',
+            itemType: 'label'
         });
 
         // Load the dimmer symbol (SVG)
@@ -149,6 +169,7 @@ async function createFixture(item) {
             fill: '#000000',
             originX: 'center',
             originY: 'center',
+            itemType: 'dimmer'
         });
 
 
@@ -172,6 +193,7 @@ async function createFixture(item) {
             fontFamily: FONT,
             originX: 'center',
             originY: 'center',
+            itemType: 'channel'
         });
 
 
@@ -184,6 +206,7 @@ async function createFixture(item) {
             fill: '#000000',
             originX: 'center',
             originY: 'top',
+            itemType: 'gel'
         });
 
         // Group all elements together
@@ -229,6 +252,7 @@ async function createPosition(item) {
             fill: '#000000',
             originX: 'center',
             originY: 'center',
+            itemType: 'label'
         });
 
 
@@ -445,6 +469,10 @@ function deleteItem(id) {
 }
 
 
+function updateShowData(id, name, value) {
+    console.log("updating show data", id, name, value);
+    alasql(`UPDATE shows SET ${name} = ? WHERE id = ?`, [value, id]);
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // UI FUNCTIONS
@@ -509,6 +537,31 @@ function updateInspector(ids) {
 }
 
 
+
+// Update the inspector with the common properties of the selected items
+function updateShowInspector() {
+    let show = alasql('SELECT * FROM shows WHERE id = ?', [current_show_id])[0];
+    console.log("found show:", show);
+    // if there's no show, create a default one
+    if(!show) {
+        show = default_show;
+        console.log("No show found, using default", show);
+        alasql('INSERT INTO shows VALUES ?', [show]);
+    }
+    console.log("show", show);
+
+    // Clear the inspector
+    $("#inspector input").val("");
+
+    // update the inspector with the common values
+    for (let key in show) {
+        $(`#show_inspector input[name=${key}]`).val(show[key]);
+    }
+
+}
+
+
+
 // updates UI when selection is created or updated
 function updateSelection(evt) { 
     
@@ -535,13 +588,13 @@ function updateSelection(evt) {
 
 
 function updatePositionNumbering(movedFixture, positionId){
-    console.log("updating position numbering", movedFixture.id, positionId);
+    console.log("updating position numbering", movedFixture.position, movedFixture.id, positionId);
     if(positionId){
         const posFixtures = alasql('SELECT * FROM items WHERE position = ? ORDER BY x DESC, y DESC', [positionId]);
         // console.log("fixtures", posFixtures);
         posFixtures.forEach((fixture, index) => {
             alasql('UPDATE items SET number = ? WHERE id = ?', [index+1, fixture.id]);
-            updateNumberingText(fixture.id, index+1);
+            redrawItemData(fixture.id, 'number', index+1);
         });
     }else{
         //if this object used to have a position, update the numbering of the remaining fixtures in that position
@@ -551,32 +604,36 @@ function updatePositionNumbering(movedFixture, positionId){
             // console.log("fixtures", posFixtures);
             posFixtures.forEach((fixture, index) => {
                 alasql('UPDATE items SET number = ? WHERE id = ?', [index+1, fixture.id]);
-                updateNumberingText(fixture.id, index+1);
+                redrawItemData(fixture.id, 'number', index+1);
             });
             console.log("setting position to null");
             //and also set this item's position to null
             alasql('UPDATE items SET position = ? WHERE id = ?', ["", movedFixture.id]);
-            updateNumberingText(movedFixture.id, "");
+            redrawItemData(movedFixture, 'number', '');
         }else{
             //if this object didn't have a previous position, and is still not intersecting with a position, set its number to "" just to be sure
+            console.log("didn't have previous position data")
             alasql('UPDATE items SET number = ? WHERE id = ?', ["", movedFixture.id]);
-            updateNumberingText(movedFixture.id, "");
+            redrawItemData(movedFixture, 'number', '');
         }
     }
 }
 
 
-function updateNumberingText(id, number){
-    // console.log("updating numbering text", id, number);
-    const obj = getObjectById(id);
+
+function redrawItemData(obj, name, value){
+    if(typeof obj === 'string'){
+        obj = getObjectById(obj);
+    }
+    // console.log("redrawing item data", obj, name, value);
     obj._objects.forEach(subObject => {
         // console.log("subObject", subObject);
-        if (subObject.itemType === 'number') { // Check if the sub-object is of type 'text'
+        if (subObject.itemType === name) { // Check if the sub-object is of type 'text'
             // console.log("found one!", subObject)
-            subObject.set('text', String(number));
+            subObject.set('text', String(value));
         }
     });
-    canvas.renderAll();
+    canvas.requestRenderAll();
 }
 
 
@@ -591,12 +648,21 @@ $("#inspector input").change(function () {
     let value = $(this).val();
     canvas.getActiveObjects().forEach(obj => {
         updateItemData(obj.id, name, value);
-        redrawItem(obj.id);
+        redrawItemData(obj, name, value);
+        // redrawItem(obj.id);
     });
 
-    setTimeout(() => {
-        selectMultipleObjects(selectedItems);
-    }, 500);
+    // setTimeout(() => {
+    //     selectMultipleObjects(selectedItems);
+    // }, 500);
+});
+
+// edits in the inspector sends updates to the selected objects
+$("#show_inspector input").change(function () {
+    console.log("inspector change", $(this).attr("name"), $(this).val());
+    let name = $(this).attr("name");
+    let value = $(this).val();
+    updateShowData(current_show_id, name, value);
 });
 
 
@@ -755,7 +821,7 @@ $(document).keydown(function (e) {
         saveData();
     }
     else if (e.key === 'Delete' || e.key === 'Backspace') {
-        if(!$("#inspector input").is(":focus")){
+        if(!$("#inspector input").is(":focus") && !$("#show_inspector input").is(":focus")){
             deleteSelected();
         }
     }
@@ -774,6 +840,7 @@ $(document).ready(function () {
     // initDB();
     loadData();
     drawLayoutFromDB();
+    updateShowInspector();
 });
 
 

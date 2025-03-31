@@ -143,10 +143,10 @@
 
   <div id="floating-panel" class="panel is-primary expanded">
     <button id="toggle-panel" class="">||</button>
-    <div class="panel-block">
+    <div class="panel-block" style="flex-direction: column; justify-content: space-between; height: 100%;">
 
       <form id="inspector">
-
+        <h2>Fixture Details:</h2>
         <!-- <div class="field is-horizontal">
           <div class="field-label is-small"><label class="label">Number</label></div>
           <div class="field-body">
@@ -205,6 +205,72 @@
 
       </form>
 
+
+      <hr>
+      <form id="show_inspector">
+        <h2>Show Details:</h2>
+        <div class="field is-horizontal">
+          <div class="field-label is-small"><label class="label">Name</label></div>
+          <div class="field-body">
+            <div class="field">
+              <div class="control">
+                <input name="name" class="input is-small" type="text" placeholder="show name">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field is-horizontal">
+          <div class="field-label is-small"><label class="label">Company</label></div>
+          <div class="field-body">
+            <div class="field">
+              <div class="control">
+                <input name="company" class="input is-small" type="text" placeholder="company">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field is-horizontal">
+          <div class="field-label is-small"><label class="label">Venue</label></div>
+          <div class="field-body">
+            <div class="field">
+              <div class="control">
+                <input name="venue" class="input is-small" type="text" placeholder="Venue">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field is-horizontal">
+          <div class="field-label is-small"><label class="label">Designer</label></div>
+          <div class="field-body">
+            <div class="field">
+              <div class="control">
+                <input name="designer" class="input is-small" type="text" placeholder="designer name">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field is-horizontal">
+          <div class="field-label is-small"><label class="label">Date</label></div>
+          <div class="field-body">
+            <div class="field">
+              <div class="control">
+                <input name="date" class="input is-small" type="text" placeholder="date">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        
+
+
+        
+      </form>
+
+
     </div>
   </div>
 
@@ -225,6 +291,7 @@
   <script src="/js/alasql.min.js"></script>
   <script src="/js/jquery.min.js"></script>
   <script src="/js/fabric.min.js"></script>
+
   <script src="/js/db.js"></script>
   <script src="/js/app.js"></script>
 </body>

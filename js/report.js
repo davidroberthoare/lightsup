@@ -49,3 +49,24 @@ var table = new Tabulator("#report", {
         return str;
     },
 });
+
+
+var current_show_id = localStorage.getItem('current_show_id') || 'default';
+$("document").ready(function(){
+    //get the current show data
+    const show_data = alasql('SELECT * FROM shows WHERE id = ?', [current_show_id]);
+    if (show_data.length === 0) {
+        console.error("No show found with id: " + current_show_id);
+        return;
+    }
+    const show = show_data[0];
+    console.log("show", show);
+    //set the show name in the title
+    document.title = show.name + " - Report";
+    //set the show name in the header
+    
+   
+    for (const key in show) {
+        $(`#title_block div[data-id='${key}']`).text(show[key]);
+    }
+});
