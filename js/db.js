@@ -81,5 +81,7 @@ function saveData() {
     const shows = alasql('SELECT * FROM shows');
     console.log("saving data", shows);
     localStorage.setItem('shows', JSON.stringify(shows));
+
+    statusToast("saved");
 }
 

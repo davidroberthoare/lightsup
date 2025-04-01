@@ -63,16 +63,8 @@
               </a>
       
               <div class="dropdown-menu" id="dropdown-menu" role="menu">
-                <div class="dropdown-content">
-                  <a class="dropdown-item" data-type="fixture" data-subtype="par_64">
-                    Par-64
-                  </a>
-                  <a class="dropdown-item" data-type="fixture" data-subtype="fresnel_6">
-                    Fresnel 6"
-                  </a>
-                  <a class="dropdown-item" data-type="fixture" data-subtype="source4_26">
-                    Source-4 26°
-                  </a>
+                <div class="dropdown-content" id="fixtures_menu">
+                  <!-- fixtures will be added here, loaded from config file -->
                 </div>
               </div>
             </div>
@@ -285,7 +277,11 @@
 
 
 
-  <div id="footer">statusbar</div>
+  <div id="footer">
+    <div id="status_1">-</div>
+    <div id="status_2">-</div>
+    <div id="status_3">-</div>
+  </div>
 
 
   <script src="/js/alasql.min.js"></script>
@@ -294,6 +290,26 @@
 
   <script src="/js/db.js"></script>
   <script src="/js/app.js"></script>
+  <script>
+    $(document).ready(function () {
+      
+      // load the fixtures from the config file
+      $.getJSON('/config/fixtures.json', function (data) {
+        const $menu = $("#fixtures_menu");
+          data.forEach(function (item) {
+            const $dropdownItem = $('<a>')
+              .addClass('dropdown-item')
+              .attr('data-type', 'fixture')
+              .attr('data-subtype', item.symbol)
+              .text(item.name);
+            $menu.append($dropdownItem);
+          });
+      }).fail(function () {
+        console.error('Error loading fixtures.json');
+      });
+
+    });
+  </script>
 </body>
 
 </html>

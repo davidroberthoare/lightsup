@@ -803,7 +803,7 @@ $("#load").click(function () {
     drawLayoutFromDB();
 });
 
-$("#menu_insert a").click(function () {
+$("#menu_insert").on("click", "a", function () {
     let type = $(this).attr("data-type");
     let subtype = $(this).attr("data-subtype");
     switchMode("insert", type, subtype);
@@ -899,4 +899,19 @@ function generateRandomString(length) {
         result += characters.charAt(Math.floor(Math.random() * charactersLength));
     }
     return result;
+}
+
+
+function statusToast(msg, myclass, duration){
+    if(duration===undefined) duration = 3000;
+    if(myclass===undefined) myclass = 'good';
+
+    $("#status_2").text(msg)
+    $("#status_2").addClass(myclass)
+    $("#status_2").fadeIn(200)
+    setTimeout(function() {
+        $("#status_2").fadeOut(200, function() {
+            $("#status_2").removeClass(myclass);
+        });
+    }, duration);
 }
