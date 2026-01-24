@@ -116,7 +116,7 @@ async function createFixture(item) {
     // console.log("creating fixture...", item)
     try {
         // Load the main symbol (SVG)
-        const symbol = await loadSVG(`/img/symbols/fixtures/${item.shape}.svg`);
+        const symbol = await loadSVG(`./img/symbols/fixtures/${item.shape}.svg`);
         symbol.set({
             left: 0,
             top: 0,
@@ -151,7 +151,7 @@ async function createFixture(item) {
         });
 
         // Load the dimmer symbol (SVG)
-        const dimmer = await loadSVG('/img/symbols/util/dimmer.svg');
+        const dimmer = await loadSVG('./img/symbols/util/dimmer.svg');
         dimmer.set({
             left: 0,
             top: -10,
