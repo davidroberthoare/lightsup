@@ -10,7 +10,7 @@ import { randomId } from './util.js';
 
 const alasql = globalThis.alasql;
 
-export const DATA_VERSION = 3;
+export const DATA_VERSION = 5;
 export const STORAGE_KEY = 'lightsup:data';
 const CURRENT_SHOW_KEY = 'current_show_id';
 
@@ -26,13 +26,13 @@ export const DEFAULT_SHOW = Object.freeze({
 
 // Only these columns may be set through the generic field-update helpers;
 // anything else is a programming error, not data.
-const ITEM_FIELDS = new Set(['x', 'y', 'angle', 'scalex', 'scaley', 'position', 'number', 'label', 'channel', 'dimmer', 'gel']);
+const ITEM_FIELDS = new Set(['x', 'y', 'angle', 'scalex', 'scaley', 'width', 'position', 'number', 'label', 'channel', 'dimmer', 'gel', 'locked']);
 const SHOW_FIELDS = new Set(['name', 'company', 'venue', 'designer', 'date']);
 
-const ITEM_COLUMNS = ['id', 'show_id', 'type', 'shape', 'x', 'y', 'angle', 'scalex', 'scaley', 'position', 'number', 'label', 'channel', 'dimmer', 'gel'];
+const ITEM_COLUMNS = ['id', 'show_id', 'type', 'shape', 'x', 'y', 'angle', 'scalex', 'scaley', 'width', 'position', 'number', 'label', 'channel', 'dimmer', 'gel', 'locked'];
 const ITEM_DEFAULTS = {
-    show_id: '', type: '', shape: '', x: 0, y: 0, angle: 0, scalex: 1, scaley: 1,
-    position: '', number: null, label: '', channel: '', dimmer: '', gel: '',
+    show_id: '', type: '', shape: '', x: 0, y: 0, angle: 0, scalex: 1, scaley: 1, width: null,
+    position: '', number: null, label: '', channel: '', dimmer: '', gel: '', locked: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -79,12 +79,14 @@ export function initDB(wipe) {
         angle INT,
         scalex FLOAT,
         scaley FLOAT,
+        width FLOAT,
         position STRING,
         number INT,
         label STRING,
         channel STRING,
         dimmer STRING,
-        gel STRING
+        gel STRING,
+        locked BOOLEAN
         )`);
 }
 
@@ -139,6 +141,8 @@ function migrateLegacy(storage) {
 function normalizeDoc(doc) {
     doc.items.forEach((item) => {
         if (item.show_id === undefined) item.show_id = DEFAULT_SHOW.id;
+        if (item.width === undefined) item.width = null;
+        if (item.locked === undefined) item.locked = false;
     });
     doc.shows.forEach((show) => {
         if (show.updated_at === undefined) show.updated_at = null;
@@ -333,8 +337,11 @@ export function createItem(fields) {
     return item;
 }
 
-export function updateItemLocation(id, x, y, scalex, scaley, angle) {
-    alasql('UPDATE items SET x = ?, y = ?, scalex = ?, scaley = ?, angle = ? WHERE id = ?', [x, y, scalex, scaley, angle, id]);
+// width is only meaningful for the text tool (a Textbox's independent wrap
+// width, as opposed to its scaleX/scaleY) but is accepted generically here
+// since every item shares one table; other item types just store null.
+export function updateItemLocation(id, x, y, scalex, scaley, angle, width = null) {
+    alasql('UPDATE items SET x = ?, y = ?, scalex = ?, scaley = ?, angle = ?, width = ? WHERE id = ?', [x, y, scalex, scaley, angle, width, id]);
     markDirty();
 }
 

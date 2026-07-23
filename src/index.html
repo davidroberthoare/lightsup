@@ -118,6 +118,9 @@
                   <a class="dropdown-item" data-type="shape" data-subtype="arrow">
                     Arrow
                   </a>
+                  <a class="dropdown-item" data-type="shape" data-subtype="text">
+                    Text
+                  </a>
                 </div>
               </div>
             </div>
@@ -148,7 +151,7 @@
     <div class="panel-block" style="flex-direction: column; justify-content: space-between; height: 100%;">
 
       <form id="inspector">
-        <h2>Fixture Details:</h2>
+        <h2>Properties:</h2>
 
         <div class="field is-horizontal">
           <div class="field-label is-small"><label class="label">Label</label></div>
@@ -189,6 +192,19 @@
             <div class="field">
               <div class="control">
                 <input name="gel" class="input is-small" type="text" placeholder="R60">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field is-horizontal">
+          <div class="field-label is-small"><label class="label">Locked</label></div>
+          <div class="field-body">
+            <div class="field">
+              <div class="control">
+                <label class="checkbox">
+                  <input name="locked" type="checkbox">
+                </label>
               </div>
             </div>
           </div>

@@ -13,11 +13,12 @@ const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 20;
 const CLICK_DRAG_THRESHOLD = 4; // px of mouse travel that still counts as a click
 
-// Which inspector fields apply to which item type.
+// Which inspector fields apply to which item type. 'locked' applies to all —
+// it's the one field a locked object still accepts (see the change handler).
 const INSPECTOR_FIELDS = {
-    fixture: ['label', 'dimmer', 'channel', 'gel'],
-    position: ['label'],
-    shape: ['label'],
+    fixture: ['label', 'dimmer', 'channel', 'gel', 'locked'],
+    position: ['label', 'locked'],
+    shape: ['label', 'locked'],
 };
 
 const MODE = { action: 'default', type: null, subtype: null };
@@ -138,7 +139,7 @@ async function afterHistoryChange() {
     await render.renderAll(store.getItems(currentShowId));
     refreshShowSelect();
     updateShowInspector();
-    $('#inspector input').val('');
+    clearInspector();
     refreshHistoryButtons();
 }
 
@@ -160,16 +161,37 @@ function applyNumberChanges(changes) {
 }
 
 // Saves an object's placement and, for fixtures, re-resolves which position
-// it hangs on.
+// it hangs on. Also picks up two things unique to the freestanding text
+// tool: dragging a side handle changes its wrap width (not scale), and
+// double-click-to-edit content changes are only known once editing exits —
+// both land here via the same object:modified event as an ordinary move.
 function persistObject(obj) {
     if (!obj.id) return;
-    store.updateItemLocation(obj.id, obj.left, obj.top, obj.scaleX, obj.scaleY, obj.angle);
+    // Belt and suspenders: Fabric's lock flags should already have blocked
+    // any interactive transform on a locked object, but a locked fixture
+    // can still get *carried* by an unlocked position's drag handler via
+    // direct property assignment (bypassing Fabric's own lock checks) if
+    // that filter ever regresses — so refuse to persist a locked item's
+    // geometry here too, at the one place all such changes funnel through.
+    const item = store.getItem(obj.id);
+    if (item && item.locked) return;
+
+    // Only the freestanding text tool is a bare Textbox (type 'textbox');
+    // everything else is a Group whose own .width is just its bounding box
+    // and isn't meaningful to persist.
+    const width = obj.type === 'textbox' ? obj.width : null;
+    store.updateItemLocation(obj.id, obj.left, obj.top, obj.scaleX, obj.scaleY, obj.angle, width);
 
     if (obj.itemType === 'fixture') {
         const position = canvas.getObjects().find(
             (o) => o.itemType === 'position' && obj.intersectsWithObject(o));
         const changes = store.assignFixtureToPosition(obj.id, position ? position.id : null);
         applyNumberChanges(changes);
+    }
+
+    if (typeof obj.text === 'string') {
+        store.updateItemField(obj.id, 'label', obj.text);
+        $('#inspector input[name=label]').val(obj.text);
     }
 }
 
@@ -268,6 +290,10 @@ canvas.on('mouse:up', (opt) => {
         shape: MODE.subtype,
         x: opt.scenePoint.x,
         y: opt.scenePoint.y,
+        // A blank Textbox renders nothing and can't be clicked to edit, so
+        // give it a starting caption the way other item types get one for
+        // free from their symbol/shape.
+        label: MODE.type === 'shape' && MODE.subtype === 'text' ? 'Text' : undefined,
     });
     render.renderItem(item);
     refreshHistoryButtons();
@@ -276,10 +302,15 @@ canvas.on('mouse:up', (opt) => {
 // ---------------------------------------------------------------------------
 // Selection and inspector
 
+function clearInspector() {
+    $('#inspector input[type=text]').val('');
+    $('#inspector input[type=checkbox]').prop('checked', false).prop('indeterminate', false);
+}
+
 function updateInspector(ids) {
     const items = store.getItemsByIds(ids);
 
-    $('#inspector input').val('');
+    clearInspector();
 
     const common = {};
     items.forEach((item) => {
@@ -293,7 +324,16 @@ function updateInspector(ids) {
     });
 
     for (const key in common) {
-        $(`#inspector input[name=${key}]`).val(common[key]);
+        const $field = $(`#inspector input[name=${key}]`);
+        if ($field.attr('type') === 'checkbox') {
+            if (common[key] === '*') {
+                $field.prop('indeterminate', true);
+            } else {
+                $field.prop('checked', !!common[key]);
+            }
+        } else {
+            $field.val(common[key]);
+        }
     }
 }
 
@@ -303,18 +343,33 @@ function updateSelection(evt) {
     if (evt.selected.length > 1) {
         const group = canvas.getActiveObject();
         group.hasControls = false;
+
+        // Fabric applies a multi-drag to the ActiveSelection as one unit —
+        // individual members' own lock flags aren't consulted for that
+        // transform, so if any member is locked, lock the whole batch's
+        // movement too rather than let the drag silently drag a locked item.
+        const hasLocked = evt.selected.some((obj) => {
+            const item = store.getItem(obj.id);
+            return item && item.locked;
+        });
+        group.lockMovementX = hasLocked;
+        group.lockMovementY = hasLocked;
     }
     updateInspector(evt.selected.map((obj) => obj.id));
 }
 
 canvas.on('selection:created', updateSelection);
 canvas.on('selection:updated', updateSelection);
-canvas.on('selection:cleared', () => {
-    $('#inspector input').val('');
-});
+canvas.on('selection:cleared', clearInspector);
 
 function deleteSelected() {
-    const objs = canvas.getActiveObjects();
+    // Locked objects accept no change, deletion included — skip them and
+    // only delete whatever's left. (See INSPECTOR_FIELDS comment: unlocking
+    // is the one way out, via the inspector, not the Delete key.)
+    const objs = canvas.getActiveObjects().filter((obj) => {
+        const item = store.getItem(obj.id);
+        return !(item && item.locked);
+    });
     if (objs.length === 0) return;
     if (!confirm('Delete selected items?')) return;
 
@@ -330,18 +385,26 @@ function deleteSelected() {
 }
 
 // Inspector edits apply to every selected object, restricted to the fields
-// that exist for its type.
+// that exist for its type. A locked object accepts only the 'locked' field
+// itself (unlocking) — every other edit is silently skipped while locked.
 $('#inspector input').change(function () {
     const name = $(this).attr('name');
-    const value = $(this).val();
+    const isCheckbox = $(this).attr('type') === 'checkbox';
+    const value = isCheckbox ? $(this).prop('checked') : $(this).val();
     store.checkpoint();
     canvas.getActiveObjects().forEach((obj) => {
         const item = store.getItem(obj.id);
         if (!item) return;
         const editable = INSPECTOR_FIELDS[item.type] || [];
         if (!editable.includes(name)) return;
+        if (item.locked && name !== 'locked') return;
+
         store.updateItemField(obj.id, name, value);
-        render.updateItemText(obj.id, name, value);
+        if (name === 'locked') {
+            render.setItemLocked(obj.id, value, item.type);
+        } else {
+            render.updateItemText(obj.id, name, value);
+        }
     });
     refreshHistoryButtons();
 });

@@ -86,23 +86,47 @@
       check('text unflips when a fixture is upright', label.flipX === false);
 
       // --- shapes ---------------------------------------------------------
+      // Captions for box/circle/line/arrow are a separate object synced to
+      // the shape's live geometry, not a group sub-object (a nested,
+      // group-scaled caption can't stay both a fixed font size AND a fixed
+      // distance from the shape's edge at once — see the comment above
+      // SHAPE_LABEL_OFFSET in render.js). Find them by their unique text.
+      const findLabel = (text) => render.getCanvas().getObjects().find(o => o.itemType === 'label' && o.text === text);
+
       const box = store.createItem({ show_id: showId, type: 'shape', shape: 'box', x: 100, y: 400, label: 'Set piece' });
       const circle = store.createItem({ show_id: showId, type: 'shape', shape: 'circle', x: 250, y: 400, label: 'Table' });
       const line = store.createItem({ show_id: showId, type: 'shape', shape: 'line', x: 400, y: 400, label: 'Wall' });
       const arrow = store.createItem({ show_id: showId, type: 'shape', shape: 'arrow', x: 550, y: 400, label: 'Entrance' });
       for (const s of [box, circle, line, arrow]) await render.renderItem(s);
       check('all four shape kinds render without throwing', [box, circle, line, arrow].every(s => !!render.getObjectById(s.id)));
-      const boxLabel = render.getObjectById(box.id)._objects.find(o => o.itemType === 'label');
-      check('shapes carry their label as a sub-object', boxLabel && boxLabel.text === 'Set piece');
+      check('shapes carry their label as a separate synced caption', !!findLabel('Set piece'));
       const shapeObj = render.getObjectById(box.id);
       check('shapes are freely resizable (no locked scaling axis)', !shapeObj.lockScalingX && !shapeObj.lockScalingY);
 
+      // Grow the box a lot and confirm the caption tracks the new edge at a
+      // constant font size, instead of scaling into illegibility or getting
+      // left behind at the shape's original (now much smaller) offset.
+      const beforeGrowBottom = shapeObj.top + (shapeObj.height * shapeObj.scaleY) / 2;
+      shapeObj.set({ scaleX: 3, scaleY: 3 });
+      shapeObj.fire('scaling', { target: shapeObj });
+      const grownLabel = findLabel('Set piece');
+      const afterGrowBottom = shapeObj.top + (shapeObj.height * shapeObj.scaleY) / 2;
+      check('growing a shape 3x keeps its caption at scale 1 (constant font size)', grownLabel.scaleY === 1);
+      check('growing a shape 3x moves the caption to track the new edge, not the old one',
+        Math.abs(grownLabel.top - afterGrowBottom) < 2 && Math.abs(afterGrowBottom - beforeGrowBottom) > 20);
+
+      // Deleting the shape must also remove its now-orphaned caption object.
+      render.removeItemObject(box.id);
+      check('deleting a shape removes its caption too (no orphaned label)', !findLabel('Set piece'));
+
       // --- undo/redo reaches the canvas via a full redraw -----------------
+      // The arrow item is TWO canvas objects (its shape + its separate
+      // synced caption), so deleting/restoring it moves drawn().length by 2.
       const beforeUndoCount = drawn().length;
       store.checkpoint();
       store.deleteItem(arrow.id);
       render.removeItemObject(arrow.id);
-      check('delete after checkpoint removes the object', drawn().length === beforeUndoCount - 1);
+      check('delete after checkpoint removes the object and its caption', drawn().length === beforeUndoCount - 2);
 
       store.undo();
       await render.renderAll(store.getItems(showId));
@@ -111,7 +135,7 @@
 
       store.redo();
       await render.renderAll(store.getItems(showId));
-      check('redo re-applies the delete', drawn().length === beforeUndoCount - 1);
+      check('redo re-applies the delete', drawn().length === beforeUndoCount - 2);
 
       // --- legacy upgrade path ------------------------------------------
       localStorage.clear();
