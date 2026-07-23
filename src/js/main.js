@@ -17,6 +17,7 @@ const CLICK_DRAG_THRESHOLD = 4; // px of mouse travel that still counts as a cli
 const INSPECTOR_FIELDS = {
     fixture: ['label', 'dimmer', 'channel', 'gel'],
     position: ['label'],
+    shape: ['label'],
 };
 
 const MODE = { action: 'default', type: null, subtype: null };
@@ -59,6 +60,37 @@ function updateShowInspector() {
 function boot() {
     const current = store.loadData();
     switchShow(current);
+    refreshHistoryButtons();
+}
+
+// ---------------------------------------------------------------------------
+// Load-show modal
+
+function formatSavedTime(iso) {
+    if (!iso) return 'Never saved';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return 'Never saved';
+    return date.toLocaleString();
+}
+
+function openLoadShowModal() {
+    const $tbody = $('#load_show_table tbody');
+    $tbody.empty();
+    store.getShows().forEach((show) => {
+        const $row = $('<tr>').toggleClass('is-selected', show.id === currentShowId);
+        $('<td>').text(show.name).appendTo($row);
+        $('<td>').text(formatSavedTime(show.updated_at)).appendTo($row);
+        $row.on('click', () => {
+            switchShow(show.id);
+            closeLoadShowModal();
+        });
+        $tbody.append($row);
+    });
+    $('#load_show_modal').addClass('is-active');
+}
+
+function closeLoadShowModal() {
+    $('#load_show_modal').removeClass('is-active');
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +108,48 @@ function switchMode(mode, type, subtype) {
         $('#menu_insert').addClass('selected');
         canvas.defaultCursor = 'crosshair';
     }
+}
+
+// ---------------------------------------------------------------------------
+// Undo / redo
+//
+// One user gesture can produce several store writes — dragging a position
+// also moves and re-persists its child fixtures, for instance — so we
+// checkpoint once per gesture rather than once per store call. gestureChecked
+// tracks whether this mouse-down-to-mouse-up gesture has already taken its
+// checkpoint; it resets on every mouse:down.
+
+let gestureChecked = false;
+
+function refreshHistoryButtons() {
+    $('#undo_item').toggleClass('is-disabled', !store.canUndo());
+    $('#redo_item').toggleClass('is-disabled', !store.canRedo());
+}
+
+// After undo/redo the whole dataset may have changed shape (a created show
+// undone, fields reverted, items resurrected/removed), so re-derive
+// everything the UI shows from the store rather than patching it.
+async function afterHistoryChange() {
+    canvas.discardActiveObject();
+    if (!store.getShow(currentShowId)) {
+        currentShowId = store.getShows()[0].id;
+        store.setCurrentShowId(currentShowId);
+    }
+    await render.renderAll(store.getItems(currentShowId));
+    refreshShowSelect();
+    updateShowInspector();
+    $('#inspector input').val('');
+    refreshHistoryButtons();
+}
+
+async function performUndo() {
+    if (!store.undo()) return;
+    await afterHistoryChange();
+}
+
+async function performRedo() {
+    if (!store.redo()) return;
+    await afterHistoryChange();
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +177,11 @@ canvas.on('object:modified', (e) => {
     const obj = e.target;
     if (!obj) return;
 
+    if (!gestureChecked) {
+        store.checkpoint();
+        gestureChecked = true;
+    }
+
     // A multi-selection reports child coordinates relative to the selection;
     // discard it first so absolute coordinates are restored, then persist
     // each child individually.
@@ -111,9 +190,10 @@ canvas.on('object:modified', (e) => {
         canvas.discardActiveObject();
         children.forEach((child) => persistObject(child));
         canvas.requestRenderAll();
-        return;
+    } else {
+        persistObject(obj);
     }
-    persistObject(obj);
+    refreshHistoryButtons();
 });
 
 canvas.on('object:rotating', (e) => {
@@ -143,6 +223,7 @@ let lastPosY = 0;
 let downInfo = null;
 
 canvas.on('mouse:down', (opt) => {
+    gestureChecked = false;
     if (opt.e.button === 1) { // middle mouse button
         isPanning = true;
         lastPosX = opt.e.clientX;
@@ -180,6 +261,7 @@ canvas.on('mouse:up', (opt) => {
     downInfo = null;
     if (!wasClick) return;
 
+    store.checkpoint();
     const item = store.createItem({
         show_id: currentShowId,
         type: MODE.type,
@@ -188,6 +270,7 @@ canvas.on('mouse:up', (opt) => {
         y: opt.scenePoint.y,
     });
     render.renderItem(item);
+    refreshHistoryButtons();
 });
 
 // ---------------------------------------------------------------------------
@@ -235,6 +318,7 @@ function deleteSelected() {
     if (objs.length === 0) return;
     if (!confirm('Delete selected items?')) return;
 
+    store.checkpoint();
     canvas.discardActiveObject();
     objs.forEach((obj) => {
         const changes = store.deleteItem(obj.id);
@@ -242,6 +326,7 @@ function deleteSelected() {
         applyNumberChanges(changes);
     });
     canvas.requestRenderAll();
+    refreshHistoryButtons();
 }
 
 // Inspector edits apply to every selected object, restricted to the fields
@@ -249,6 +334,7 @@ function deleteSelected() {
 $('#inspector input').change(function () {
     const name = $(this).attr('name');
     const value = $(this).val();
+    store.checkpoint();
     canvas.getActiveObjects().forEach((obj) => {
         const item = store.getItem(obj.id);
         if (!item) return;
@@ -257,13 +343,16 @@ $('#inspector input').change(function () {
         store.updateItemField(obj.id, name, value);
         render.updateItemText(obj.id, name, value);
     });
+    refreshHistoryButtons();
 });
 
 $('#show_inspector input').change(function () {
     const name = $(this).attr('name');
     const value = $(this).val();
+    store.checkpoint();
     store.updateShowField(currentShowId, name, value);
     if (name === 'name') refreshShowSelect();
+    refreshHistoryButtons();
 });
 
 // ---------------------------------------------------------------------------
@@ -276,14 +365,21 @@ $('#save').click(() => {
 
 $('#load').click(() => {
     if (store.isDirty() && !confirm('Discard unsaved changes and reload the last save?')) return;
-    boot();
+    const current = store.loadData();
+    switchShow(current);
+    refreshHistoryButtons();
+    openLoadShowModal();
 });
+
+$('#load_show_modal_close, #load_show_modal .modal-background').click(closeLoadShowModal);
 
 $('#new_show').click(() => {
     const name = prompt('New show name:', 'New Show');
     if (!name) return;
+    store.checkpoint();
     const show = store.createShow({ name });
     switchShow(show.id);
+    refreshHistoryButtons();
 });
 
 $('#show_select').change(function () {
@@ -298,17 +394,27 @@ $('#toggle-panel').click(() => {
     $('#floating-panel').toggleClass('expanded');
 });
 
+$('#undo_item').click(performUndo);
+$('#redo_item').click(performRedo);
+
 $(document).keydown((e) => {
-    if (e.ctrlKey && e.key === 's') {
+    const tag = document.activeElement && document.activeElement.tagName;
+    const inField = tag === 'INPUT' || tag === 'TEXTAREA';
+
+    if (e.ctrlKey && !e.shiftKey && !inField && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        performUndo();
+    } else if (!inField && ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z') || (e.ctrlKey && e.key.toLowerCase() === 'y'))) {
+        e.preventDefault();
+        performRedo();
+    } else if (e.ctrlKey && e.key === 's') {
         e.preventDefault();
         store.saveData();
         statusToast('saved');
-    } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        const tag = document.activeElement && document.activeElement.tagName;
-        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
-            deleteSelected();
-        }
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && !inField) {
+        deleteSelected();
     } else if (e.key === 'Escape') {
+        closeLoadShowModal();
         switchMode('default', null, null);
     }
 });

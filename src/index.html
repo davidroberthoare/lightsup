@@ -40,6 +40,20 @@
             </a>
           </div>
         </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link">
+            Edit
+          </a>
+
+          <div class="navbar-dropdown">
+            <a class="navbar-item" id="undo_item">
+              Undo
+            </a>
+            <a class="navbar-item" id="redo_item">
+              Redo
+            </a>
+          </div>
+        </div>
         <!-- add menu -->
         <div class="navbar-item has-dropdown is-hoverable" id="menu_insert">
           <a class="navbar-link">
@@ -82,6 +96,32 @@
               </div>
             </div>
 
+            <div class="nested dropdown">
+              <a class="navbar-item">
+                <span class="icon-text ">
+                  <span>Shapes</span>
+                  <span class="icon">›</span>
+                </span>
+              </a>
+
+              <div class="dropdown-menu" role="menu">
+                <div class="dropdown-content">
+                  <a class="dropdown-item" data-type="shape" data-subtype="box">
+                    Box
+                  </a>
+                  <a class="dropdown-item" data-type="shape" data-subtype="circle">
+                    Circle
+                  </a>
+                  <a class="dropdown-item" data-type="shape" data-subtype="line">
+                    Line
+                  </a>
+                  <a class="dropdown-item" data-type="shape" data-subtype="arrow">
+                    Arrow
+                  </a>
+                </div>
+              </div>
+            </div>
+
           </div>
 
         </div>
@@ -102,10 +142,6 @@
 
 
 
-
-  <div id="toolbar">
-    <!-- tool buttons here -->
-  </div>
 
   <div id="floating-panel" class="panel is-primary expanded">
     <button id="toggle-panel" class="">||</button>
@@ -238,6 +274,30 @@
     <div id="status_1">-</div>
     <div id="status_2">-</div>
     <div id="status_3">-</div>
+  </div>
+
+
+  <div class="modal" id="load_show_modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Open a Show</p>
+        <button class="delete" aria-label="close" id="load_show_modal_close"></button>
+      </header>
+      <section class="modal-card-body">
+        <table class="table is-fullwidth is-hoverable" id="load_show_table">
+          <thead>
+            <tr>
+              <th>Show</th>
+              <th>Last saved</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- rows injected from the saved shows -->
+          </tbody>
+        </table>
+      </section>
+    </div>
   </div>
 
 

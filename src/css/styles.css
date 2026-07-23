@@ -1,10 +1,9 @@
 :root {
     --bar_height: 2em;
-    /* for menu, toolbar and footer */
+    /* for menu and footer */
     /* --menu_color: rgb(158, 158, 158); */
     --bar_color: rgb(232, 232, 232);
     /* --bar_text_color: #5d5d5d; */
-    --tool_button_size: 1.5em;
 }
 
 /* BULMA OVERRIDES */
@@ -25,6 +24,12 @@ body {
 .navbar-item.selected {
     background-color: #f2ff3a;
     /* color: white; */
+}
+
+.navbar-item.is-disabled {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
 }
 
 /* NESTED DROPDOWN */
@@ -59,44 +64,22 @@ body {
     /* background-color: var(--menu_color); */
 }
 
-#toolbar {
-    height: var(--bar_height);
-    line-height: var(--bar_height);
-    padding: 0 0.5em;
-    background-color: var(--bar_color);
-    display: flex;
-    align-items: center;
-
-    /* color: var(--bar_text_color); */
-}
-
-#toolbar .tool-button {
-    border: solid 1px #000;
-    width: var(--tool_button_size);
-    height: var(--tool_button_size);
-    border-radius: 20%;
-    text-align: center;
-    line-height: var(--tool_button_size);
+#load_show_table tbody tr {
     cursor: pointer;
 }
 
-#toolbar .tool-button:hover {
-    background-color: #ebefb4;
-    font-weight: bold;
-}
-
 #container {
-    height: calc(100vh - var(--bulma-navbar-height) - (var(--bar_height) * 2));
+    height: calc(100vh - var(--bulma-navbar-height) - var(--bar_height));
     overflow: hidden;
 }
 
 
 #floating-panel {
     position: fixed;
-    top: calc(var(--bulma-navbar-height) + (var(--bar_height)));
+    top: var(--bulma-navbar-height);
     left: 0;
     width: 250px;
-    height: calc(100vh - var(--bulma-navbar-height) - (var(--bar_height) * 2));
+    height: calc(100vh - var(--bulma-navbar-height) - var(--bar_height));
     overflow: hidden;
     z-index: 9;
     background-color: white;

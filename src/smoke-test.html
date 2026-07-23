@@ -85,6 +85,34 @@
       rotated.set('angle', 0); render.applyTextFlip(rotated);
       check('text unflips when a fixture is upright', label.flipX === false);
 
+      // --- shapes ---------------------------------------------------------
+      const box = store.createItem({ show_id: showId, type: 'shape', shape: 'box', x: 100, y: 400, label: 'Set piece' });
+      const circle = store.createItem({ show_id: showId, type: 'shape', shape: 'circle', x: 250, y: 400, label: 'Table' });
+      const line = store.createItem({ show_id: showId, type: 'shape', shape: 'line', x: 400, y: 400, label: 'Wall' });
+      const arrow = store.createItem({ show_id: showId, type: 'shape', shape: 'arrow', x: 550, y: 400, label: 'Entrance' });
+      for (const s of [box, circle, line, arrow]) await render.renderItem(s);
+      check('all four shape kinds render without throwing', [box, circle, line, arrow].every(s => !!render.getObjectById(s.id)));
+      const boxLabel = render.getObjectById(box.id)._objects.find(o => o.itemType === 'label');
+      check('shapes carry their label as a sub-object', boxLabel && boxLabel.text === 'Set piece');
+      const shapeObj = render.getObjectById(box.id);
+      check('shapes are freely resizable (no locked scaling axis)', !shapeObj.lockScalingX && !shapeObj.lockScalingY);
+
+      // --- undo/redo reaches the canvas via a full redraw -----------------
+      const beforeUndoCount = drawn().length;
+      store.checkpoint();
+      store.deleteItem(arrow.id);
+      render.removeItemObject(arrow.id);
+      check('delete after checkpoint removes the object', drawn().length === beforeUndoCount - 1);
+
+      store.undo();
+      await render.renderAll(store.getItems(showId));
+      check('undo restores the deleted shape after a full redraw', drawn().length === beforeUndoCount);
+      check('undo restored the same item id', !!render.getObjectById(arrow.id));
+
+      store.redo();
+      await render.renderAll(store.getItems(showId));
+      check('redo re-applies the delete', drawn().length === beforeUndoCount - 1);
+
       // --- legacy upgrade path ------------------------------------------
       localStorage.clear();
       localStorage.setItem('shows', JSON.stringify([
@@ -100,9 +128,11 @@
       check('a pre-multi-show save still loads', store.getShow('default').name === 'Legacy Show');
       check('legacy items are adopted into the current show', store.getItems('default').every(i => i.show_id === 'default'));
       check('legacy fixture data survives intact', store.getItem('oldfix01').gel === 'R60');
+      check('legacy show gets a null updated_at, not undefined', store.getShow('default').updated_at === null);
 
       store.saveData();
       check('resaving writes the versioned format', JSON.parse(localStorage.getItem('lightsup:data')).version === store.DATA_VERSION);
+      check('saving stamps updated_at on the current show', !!store.getShow('default').updated_at);
 
       store.updateShowField('default', 'name', 'Renamed');
       store.saveData();

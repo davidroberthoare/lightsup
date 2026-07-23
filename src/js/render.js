@@ -178,6 +178,89 @@ async function createFixture(item) {
     });
 }
 
+// Generic drawing shapes. Unlike fixtures/positions these have no locked
+// scaling axes — free resize via the normal corner handles is the point.
+const SHAPE_DEFAULTS = {
+    box: { width: 120, height: 70 },
+    circle: { radius: 45 },
+    line: { length: 150 },
+    arrow: { length: 150, headSize: 18 },
+};
+
+async function createShape(item) {
+    const kind = item.shape;
+    let main;
+    let labelTop;
+
+    if (kind === 'box') {
+        const { width, height } = SHAPE_DEFAULTS.box;
+        main = new fabric.Rect({
+            width, height,
+            fill: 'rgba(255,255,255,0.6)',
+            stroke: 'black',
+            strokeWidth: 1,
+            originX: 'center',
+            originY: 'center',
+        });
+        labelTop = height / 2 + 10;
+    } else if (kind === 'circle') {
+        const { radius } = SHAPE_DEFAULTS.circle;
+        main = new fabric.Circle({
+            radius,
+            fill: 'rgba(255,255,255,0.6)',
+            stroke: 'black',
+            strokeWidth: 1,
+            originX: 'center',
+            originY: 'center',
+        });
+        labelTop = radius + 10;
+    } else if (kind === 'line') {
+        const { length } = SHAPE_DEFAULTS.line;
+        main = new fabric.Line([-length / 2, 0, length / 2, 0], {
+            stroke: 'black',
+            strokeWidth: 2,
+            originX: 'center',
+            originY: 'center',
+        });
+        labelTop = -14;
+    } else if (kind === 'arrow') {
+        const { length, headSize } = SHAPE_DEFAULTS.arrow;
+        const shaft = new fabric.Line([-length / 2, 0, length / 2 - headSize, 0], {
+            stroke: 'black',
+            strokeWidth: 2,
+            originX: 'center',
+            originY: 'center',
+        });
+        const head = new fabric.Triangle({
+            left: length / 2 - headSize / 2,
+            top: 0,
+            width: headSize,
+            height: headSize,
+            fill: 'black',
+            angle: 90,
+            originX: 'center',
+            originY: 'center',
+        });
+        main = new fabric.Group([shaft, head], { originX: 'center', originY: 'center' });
+        labelTop = -14;
+    } else {
+        throw new Error(`Unknown shape: ${kind}`);
+    }
+
+    const label = makeText(item.label, {
+        left: 0,
+        top: labelTop,
+        fontSize: FONT_SIZE - 1,
+        itemType: 'label',
+    });
+
+    return new fabric.Group([main, label], {
+        left: 0,
+        top: 0,
+        itemType: 'shape',
+    });
+}
+
 async function createPosition(item) {
     const symbol = new fabric.Rect({
         left: 0,
@@ -259,6 +342,8 @@ export async function renderItem(item) {
         group = await createFixture(item);
     } else if (item.type === 'position') {
         group = await createPosition(item);
+    } else if (item.type === 'shape') {
+        group = await createShape(item);
     } else {
         return null;
     }

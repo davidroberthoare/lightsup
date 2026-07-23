@@ -10,7 +10,7 @@ import { randomId } from './util.js';
 
 const alasql = globalThis.alasql;
 
-export const DATA_VERSION = 2;
+export const DATA_VERSION = 3;
 export const STORAGE_KEY = 'lightsup:data';
 const CURRENT_SHOW_KEY = 'current_show_id';
 
@@ -21,6 +21,7 @@ export const DEFAULT_SHOW = Object.freeze({
     venue: 'Grand Theatre',
     designer: 'D. Signer',
     date: 'Jan 1, 2030',
+    updated_at: null,
 });
 
 // Only these columns may be set through the generic field-update helpers;
@@ -65,7 +66,8 @@ export function initDB(wipe) {
         company STRING,
         venue STRING,
         designer STRING,
-        date STRING
+        date STRING,
+        updated_at STRING
         )`);
     alasql(`CREATE TABLE IF NOT EXISTS items (
         id STRING PRIMARY KEY,
@@ -103,18 +105,13 @@ function parseJSON(raw) {
     }
 }
 
-// Reads whatever save data exists in storage and normalizes it into a
-// current-version document: { version, shows: [], items: [] }.
+// Reads whatever save data exists in storage, in whatever legacy shape it's
+// in, and returns a plain { shows: [], items: [] } document.
 function readDocument(storage) {
     const doc = parseJSON(storage.getItem(STORAGE_KEY));
     if (doc) {
         doc.shows = Array.isArray(doc.shows) ? doc.shows : [];
         doc.items = Array.isArray(doc.items) ? doc.items : [];
-        // Forward-compat hook: per-version upgrades go here as the schema evolves.
-        doc.items.forEach((item) => {
-            if (item.show_id === undefined) item.show_id = DEFAULT_SHOW.id;
-        });
-        doc.version = DATA_VERSION;
         return doc;
     }
     return migrateLegacy(storage);
@@ -134,14 +131,26 @@ function migrateLegacy(storage) {
     items.forEach((item) => {
         if (item.show_id === undefined) item.show_id = showId;
     });
-    return { version: DATA_VERSION, shows, items };
+    return { shows, items };
+}
+
+// Backfills columns added in later schema versions. Runs on every load
+// regardless of source, so it's the single place per-version upgrades go.
+function normalizeDoc(doc) {
+    doc.items.forEach((item) => {
+        if (item.show_id === undefined) item.show_id = DEFAULT_SHOW.id;
+    });
+    doc.shows.forEach((show) => {
+        if (show.updated_at === undefined) show.updated_at = null;
+    });
+    return doc;
 }
 
 // Replaces all in-memory state with the saved data. Returns the id of the
 // current show (guaranteed to exist after this call).
 export function loadData(storage = defaultStorage()) {
     initDB(true);
-    const doc = readDocument(storage);
+    const doc = normalizeDoc(readDocument(storage));
     doc.shows.forEach((show) => alasql('INSERT INTO shows VALUES ?', [show]));
     doc.items.forEach((item) => alasql('INSERT INTO items VALUES ?', [item]));
 
@@ -156,10 +165,18 @@ export function loadData(storage = defaultStorage()) {
     }
 
     markClean();
+    resetHistory();
     return current;
 }
 
+// Saving stamps the *current* show's updated_at — the show whose plot was
+// actually being edited in this session — even though every show's data is
+// serialized into the one localStorage document each time.
 export function saveData(storage = defaultStorage()) {
+    const currentId = getCurrentShowId(storage);
+    if (getShow(currentId)) {
+        alasql('UPDATE shows SET updated_at = ? WHERE id = ?', [new Date().toISOString(), currentId]);
+    }
     const doc = {
         version: DATA_VERSION,
         shows: alasql('SELECT * FROM shows'),
@@ -175,6 +192,91 @@ export function getCurrentShowId(storage = defaultStorage()) {
 
 export function setCurrentShowId(id, storage = defaultStorage()) {
     storage.setItem(CURRENT_SHOW_KEY, id);
+}
+
+// ---------------------------------------------------------------------------
+// Undo / redo
+//
+// The store snapshots its own tables rather than the canvas: the DB is the
+// source of truth (see the module comment at the top of this file), so an
+// undo step is "restore a prior copy of shows+items", and the render layer
+// just does a full redraw afterwards. This also means one snapshot captures
+// cascading effects (position renumbering, orphaned fixtures, etc.) for free
+// instead of needing to be replayed as a sequence of inverse operations.
+//
+// Snapshots are whole-table copies, not diffs. That's wasteful for huge
+// datasets, but a lighting plot is at most a few hundred rows, so it's cheap
+// and it sidesteps an entire class of "the diff didn't capture X" bugs.
+//
+// Checkpointing is caller-driven (checkpoint() is exported, not automatic)
+// because one user gesture often produces several store calls — dragging a
+// position drags its child fixtures with it, for instance — and those must
+// collapse into a single undo step. Callers checkpoint once per gesture.
+
+const MAX_HISTORY = 50;
+let undoStack = [];
+let redoStack = [];
+let suspendHistory = false; // true while undo()/redo() is restoring a snapshot
+
+function snapshotState() {
+    return {
+        shows: alasql('SELECT * FROM shows'),
+        items: alasql('SELECT * FROM items'),
+    };
+}
+
+function restoreState(state) {
+    alasql('DELETE FROM shows');
+    alasql('DELETE FROM items');
+    state.shows.forEach((show) => alasql('INSERT INTO shows VALUES ?', [show]));
+    state.items.forEach((item) => alasql('INSERT INTO items VALUES ?', [item]));
+}
+
+// Records the current state as an undo point. Call once before whatever
+// store mutations make up a single user-visible action.
+export function checkpoint() {
+    if (suspendHistory) return;
+    undoStack.push(snapshotState());
+    if (undoStack.length > MAX_HISTORY) undoStack.shift();
+    redoStack = [];
+}
+
+export function canUndo() {
+    return undoStack.length > 0;
+}
+
+export function canRedo() {
+    return redoStack.length > 0;
+}
+
+export function undo() {
+    if (undoStack.length === 0) return false;
+    const current = snapshotState();
+    const prev = undoStack.pop();
+    redoStack.push(current);
+    suspendHistory = true;
+    restoreState(prev);
+    suspendHistory = false;
+    markDirty();
+    return true;
+}
+
+export function redo() {
+    if (redoStack.length === 0) return false;
+    const current = snapshotState();
+    const next = redoStack.pop();
+    undoStack.push(current);
+    suspendHistory = true;
+    restoreState(next);
+    suspendHistory = false;
+    markDirty();
+    return true;
+}
+
+// Called on loadData(): a freshly loaded document has nothing to undo to.
+export function resetHistory() {
+    undoStack = [];
+    redoStack = [];
 }
 
 // ---------------------------------------------------------------------------

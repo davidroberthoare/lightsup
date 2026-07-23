@@ -171,6 +171,117 @@ test('dirty flag tracks mutations and saves', () => {
     assert.equal(store.isDirty(), false);
 });
 
+test('shows default to an unset updated_at and saveData stamps only the current show', () => {
+    const show2 = store.createShow({ name: 'Second Show' });
+    assert.equal(store.getShow('default').updated_at, null);
+    assert.equal(store.getShow(show2.id).updated_at, null);
+
+    store.setCurrentShowId('default', storage);
+    store.saveData(storage);
+    assert.ok(store.getShow('default').updated_at);
+    assert.equal(store.getShow(show2.id).updated_at, null);
+});
+
+test('legacy saves and v2 saves without updated_at are migrated to null, not left undefined', () => {
+    const legacy = new FakeStorage({
+        shows: JSON.stringify([{ id: 'default', name: 'Old Show', company: '', venue: '', designer: '', date: '' }]),
+        items: JSON.stringify([]),
+    });
+    store.loadData(legacy);
+    assert.equal(store.getShow('default').updated_at, null);
+
+    const v2 = new FakeStorage({
+        [store.STORAGE_KEY]: JSON.stringify({
+            version: 2,
+            shows: [{ id: 'default', name: 'V2 Show', company: '', venue: '', designer: '', date: '' }],
+            items: [],
+        }),
+    });
+    store.loadData(v2);
+    assert.equal(store.getShow('default').updated_at, null);
+});
+
+test('shapes (box/circle/line/arrow) store and round-trip through the generic item columns', () => {
+    const box = store.createItem({ show_id: 'default', type: 'shape', shape: 'box', x: 10, y: 20, label: 'Set piece' });
+    assert.equal(store.getItem(box.id).type, 'shape');
+    assert.equal(store.getItem(box.id).label, 'Set piece');
+    // Shapes are not fixtures, so they never appear on the instrument schedule.
+    assert.equal(store.getInstrumentSchedule('default').some((r) => r.id === box.id), false);
+});
+
+test('checkpoint/undo/redo restores and reapplies a prior snapshot', () => {
+    const item = store.createItem({ show_id: 'default', type: 'fixture', label: 'A' });
+
+    store.checkpoint();
+    store.updateItemField(item.id, 'label', 'B');
+    assert.equal(store.getItem(item.id).label, 'B');
+
+    assert.equal(store.undo(), true);
+    assert.equal(store.getItem(item.id).label, 'A');
+
+    assert.equal(store.redo(), true);
+    assert.equal(store.getItem(item.id).label, 'B');
+});
+
+test('undo/redo are no-ops with empty stacks', () => {
+    assert.equal(store.canUndo(), false);
+    assert.equal(store.undo(), false);
+    assert.equal(store.canRedo(), false);
+    assert.equal(store.redo(), false);
+});
+
+test('a new checkpoint clears the redo stack', () => {
+    const item = store.createItem({ show_id: 'default', type: 'fixture', label: 'A' });
+    store.checkpoint();
+    store.updateItemField(item.id, 'label', 'B');
+    store.undo();
+    assert.equal(store.canRedo(), true);
+
+    store.checkpoint();
+    store.updateItemField(item.id, 'label', 'C');
+    assert.equal(store.canRedo(), false);
+    assert.equal(store.redo(), false);
+});
+
+test('undo restores cascading changes (position renumbering) from a single checkpoint', () => {
+    const pos = store.createItem({ show_id: 'default', type: 'position' });
+    const f1 = store.createItem({ show_id: 'default', type: 'fixture', x: 10 });
+    const f2 = store.createItem({ show_id: 'default', type: 'fixture', x: 20 });
+
+    store.checkpoint(); // one checkpoint for the whole gesture, as main.js does
+    store.assignFixtureToPosition(f1.id, pos.id);
+    store.assignFixtureToPosition(f2.id, pos.id);
+    assert.equal(store.getItem(f1.id).number, 2);
+    assert.equal(store.getItem(f2.id).number, 1);
+
+    store.undo();
+    assert.equal(store.getItem(f1.id).position, '');
+    assert.equal(store.getItem(f1.id).number, null);
+    assert.equal(store.getItem(f2.id).position, '');
+});
+
+test('undo can remove a show created after the checkpoint', () => {
+    assert.equal(store.getShows().length, 1);
+    store.checkpoint();
+    const show2 = store.createShow({ name: 'Second Show' });
+    assert.equal(store.getShows().length, 2);
+
+    store.undo();
+    assert.equal(store.getShows().length, 1);
+    assert.equal(store.getShow(show2.id), undefined);
+});
+
+test('loadData resets undo/redo history', () => {
+    store.createItem({ show_id: 'default', type: 'fixture' });
+    store.checkpoint();
+    store.createItem({ show_id: 'default', type: 'fixture' });
+    assert.equal(store.canUndo(), true);
+
+    store.loadData(storage);
+    assert.equal(store.canUndo(), false);
+    assert.equal(store.canRedo(), false);
+});
+
 test('getInstrumentSchedule returns only fixtures for the given show, with position labels', () => {
     const show2 = store.createShow({ name: 'Second Show' });
     const pos = store.createItem({ show_id: 'default', type: 'position', label: 'Electric 1' });
