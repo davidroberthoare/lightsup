@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>LightsUP smoke test</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    #container { width: 800px; height: 400px; border: 1px solid #ccc; }
+    #results { font-family: monospace; font-size: 13px; line-height: 1.6; }
+    .pass::before { content: "PASS "; color: green; font-weight: bold; }
+    .fail::before { content: "FAIL "; color: red; font-weight: bold; }
+    .fail { color: red; }
+    h1 { font-size: 1.2em; }
+    h2 { font-size: 1em; margin-bottom: 4px; }
+  </style>
+</head>
+
+<body>
+  <h1>LightsUP smoke test <span id="verdict"></span></h1>
+  <p>
+    Covers the browser-only layers the Node tests can't reach: SVG loading/caching,
+    incremental rendering, and the localStorage upgrade path.
+    Your saved work is snapshotted and restored when the run finishes.
+  </p>
+  <div id="results">running…</div>
+  <h2>Rendered canvas</h2>
+  <div id="container"><canvas id="paper"></canvas></div>
+
+  <script src="./js/alasql.min.js"></script>
+  <script src="./js/fabric.min.js"></script>
+  <script type="module">
+    import * as store from './js/store.js';
+    import * as render from './js/render.js';
+
+    const results = [];
+    const check = (name, cond) => results.push({ name, ok: !!cond });
+
+    // This test writes to localStorage, so preserve whatever is really saved.
+    const snapshot = Object.entries(localStorage);
+    const restore = () => {
+      localStorage.clear();
+      snapshot.forEach(([k, v]) => localStorage.setItem(k, v));
+    };
+
+    try {
+      // --- render layer -------------------------------------------------
+      localStorage.clear();
+      const showId = store.loadData();
+      check('loadData creates and returns the default show', showId === 'default');
+
+      render.initCanvas(document.getElementById('paper'), document.getElementById('container'));
+
+      const pos = store.createItem({ show_id: showId, type: 'position', shape: 'pipe', x: 380, y: 150, label: 'Electric 1' });
+      const f1 = store.createItem({ show_id: showId, type: 'fixture', shape: 'par_64', x: 300, y: 150, label: 'A', gel: 'R60' });
+      const f2 = store.createItem({ show_id: showId, type: 'fixture', shape: 'source4_26', x: 460, y: 150, label: 'B', gel: 'L201' });
+
+      await render.renderAll(store.getItems(showId));
+      const drawn = () => render.getCanvas().getObjects().filter(o => o.itemType);
+      check('renderAll draws every item (SVG load, cache, clone)', drawn().length === 3);
+      check('items are findable by their store id', !!render.getObjectById(f1.id) && !!render.getObjectById(pos.id));
+
+      const f3 = store.createItem({ show_id: showId, type: 'fixture', shape: 'fresnel_6', x: 560, y: 260, label: 'C' });
+      await render.renderItem(f3);
+      check('renderItem adds a single item without a full redraw', drawn().length === 4);
+
+      // --- position numbering reaches the canvas ------------------------
+      store.assignFixtureToPosition(f1.id, pos.id);
+      store.assignFixtureToPosition(f2.id, pos.id)
+        .forEach(c => render.updateItemText(c.id, 'number', c.number ?? ''));
+      check('fixtures number stage-right to stage-left', store.getItem(f2.id).number === 1 && store.getItem(f1.id).number === 2);
+      const numberText = render.getObjectById(f1.id)._objects.find(o => o.itemType === 'number');
+      check('unit number updates in place on the canvas', numberText && numberText.text === '2');
+
+      store.deleteItem(f2.id).forEach(c => render.updateItemText(c.id, 'number', c.number ?? ''));
+      render.removeItemObject(f2.id);
+      check('deleting a fixture removes it from the canvas', render.getObjectById(f2.id) === null);
+      check('deleting a fixture renumbers the position', store.getItem(f1.id).number === 1);
+
+      // --- text orientation ---------------------------------------------
+      const rotated = render.getObjectById(f1.id);
+      const label = rotated._objects.find(o => o.itemType === 'label');
+      rotated.set('angle', 180); render.applyTextFlip(rotated);
+      check('text flips when a fixture is upside down', label.flipX === true && label.flipY === true);
+      rotated.set('angle', 0); render.applyTextFlip(rotated);
+      check('text unflips when a fixture is upright', label.flipX === false);
+
+      // --- legacy upgrade path ------------------------------------------
+      localStorage.clear();
+      localStorage.setItem('shows', JSON.stringify([
+        { id: 'default', name: 'Legacy Show', company: 'Co', venue: 'Hall', designer: 'D', date: '2024' }
+      ]));
+      localStorage.setItem('items', JSON.stringify([
+        { id: 'oldpos01', type: 'position', shape: 'pipe', x: 300, y: 200, angle: 0, scalex: 1, scaley: 1, position: '', number: 0, label: 'E1', channel: '', dimmer: '', gel: '' },
+        { id: 'oldfix01', type: 'fixture', shape: 'par_64', x: 200, y: 200, angle: 0, scalex: 1, scaley: 1, position: 'oldpos01', number: 1, label: 'A', channel: '5', dimmer: '12', gel: 'R60' }
+      ]));
+      localStorage.setItem('current_show_id', 'default');
+
+      store.loadData();
+      check('a pre-multi-show save still loads', store.getShow('default').name === 'Legacy Show');
+      check('legacy items are adopted into the current show', store.getItems('default').every(i => i.show_id === 'default'));
+      check('legacy fixture data survives intact', store.getItem('oldfix01').gel === 'R60');
+
+      store.saveData();
+      check('resaving writes the versioned format', JSON.parse(localStorage.getItem('lightsup:data')).version === store.DATA_VERSION);
+
+      store.updateShowField('default', 'name', 'Renamed');
+      store.saveData();
+      store.loadData();
+      check('the versioned save wins over stale legacy keys', store.getShow('default').name === 'Renamed');
+    } catch (err) {
+      results.push({ name: 'threw: ' + (err && err.stack ? err.stack : err), ok: false });
+    } finally {
+      restore();
+    }
+
+    const failed = results.filter(r => !r.ok).length;
+    document.getElementById('results').innerHTML =
+      results.map(r => `<div class="${r.ok ? 'pass' : 'fail'}">${r.name}</div>`).join('');
+    document.getElementById('verdict').textContent =
+      failed === 0 ? `— all ${results.length} passed` : `— ${failed} of ${results.length} FAILED`;
+    document.title = failed === 0 ? 'SMOKE-OK' : 'SMOKE-FAIL';
+  </script>
+</body>
+
+</html>

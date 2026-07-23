@@ -1,3 +1,4 @@
 _RESOURCES
 lightsup.code-workspace
 .vscode
+node_modules/
