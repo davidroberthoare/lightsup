@@ -30,14 +30,26 @@
 
           <div class="navbar-dropdown">
             <a class="navbar-item" id="new_show">
-              New Show
+              New
             </a>
             <a class="navbar-item" id="load">
-              Load Saved
+              Load
             </a>
             <a class="navbar-item" id="save">
               Save
             </a>
+            <hr class="navbar-divider">
+            <a class="navbar-item" id="export_show">
+              Export Show...
+            </a>
+            <a class="navbar-item" id="delete_show">
+              Delete Show...
+            </a>
+            <hr class="navbar-divider">
+            <a class="navbar-item" id="import_show">
+              Import Show...
+            </a>
+            <input type="file" id="import_show_file" accept="application/json,.json" style="display: none;">
           </div>
         </div>
         <div class="navbar-item has-dropdown is-hoverable">
@@ -133,13 +145,6 @@
 
       </div>
 
-      <div class="navbar-end">
-        <div class="navbar-item">
-          <div class="select is-small">
-            <select id="show_select" title="Current show"></select>
-          </div>
-        </div>
-      </div>
     </div>
   </nav>
 

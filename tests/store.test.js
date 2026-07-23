@@ -201,6 +201,103 @@ test('legacy saves and v2 saves without updated_at are migrated to null, not lef
     assert.equal(store.getShow('default').updated_at, null);
 });
 
+test('deleteShow removes the show and its items, but not other shows\' items', () => {
+    const show2 = store.createShow({ name: 'Second Show' });
+    store.createItem({ show_id: 'default', type: 'fixture' });
+    const show2Item = store.createItem({ show_id: show2.id, type: 'fixture' });
+
+    store.deleteShow(show2.id);
+    assert.equal(store.getShow(show2.id), undefined);
+    assert.equal(store.getItem(show2Item.id), undefined);
+    assert.equal(store.getItems('default').length, 1);
+});
+
+test('deleteShow refuses to delete the only remaining show', () => {
+    assert.equal(store.getShows().length, 1);
+    assert.throws(() => store.deleteShow('default'), /only show/);
+    assert.ok(store.getShow('default'));
+});
+
+test('exportShow returns null for an unknown show, and a self-contained document for a real one', () => {
+    assert.equal(store.exportShow('nope'), null);
+
+    const pos = store.createItem({ show_id: 'default', type: 'position', label: 'Electric 1' });
+    store.createItem({ show_id: 'default', type: 'fixture', label: 'A', position: pos.id });
+    store.createShow({ name: 'Other show' }); // must NOT leak into the export
+
+    const doc = store.exportShow('default');
+    assert.equal(doc.kind, 'lightsup-show');
+    assert.equal(doc.exportVersion, store.SHOW_EXPORT_VERSION);
+    assert.equal(doc.show.id, 'default');
+    assert.equal(doc.items.length, 2);
+    assert.ok(doc.exportedAt);
+});
+
+test('importShow rejects files that are not a valid show export', () => {
+    assert.throws(() => store.importShow(null), /not a valid/);
+    assert.throws(() => store.importShow({}), /not a valid/);
+    assert.throws(() => store.importShow({ kind: 'lightsup-show', show: {} }), /not a valid/); // items missing
+    assert.throws(() => store.importShow({ show: {}, items: [] }), /not a valid/); // kind missing
+    // The FULL multi-show backup format (STORAGE_KEY's shape) must also be
+    // rejected here, not silently misinterpreted as a single-show export.
+    assert.throws(() => store.importShow({ version: 5, shows: [], items: [] }), /not a valid/);
+});
+
+test('importShow creates a new show with fresh ids, never reusing the file\'s ids', () => {
+    const pos = store.createItem({ show_id: 'default', type: 'position', label: 'Electric 1' });
+    const fixture = store.createItem({ show_id: 'default', type: 'fixture', label: 'A', position: pos.id, gel: 'R60' });
+    const doc = store.exportShow('default');
+
+    const imported = store.importShow(doc);
+    assert.notEqual(imported.id, 'default');
+    // 'default' is still named 'My Show' too, so this collides and gets
+    // de-duplicated — see the dedicated dedup test below for that behavior.
+    assert.equal(imported.name, 'My Show (2)');
+
+    const importedItems = store.getItems(imported.id);
+    assert.equal(importedItems.length, 2);
+    assert.ok(importedItems.every((i) => i.id !== pos.id && i.id !== fixture.id));
+});
+
+test('importShow remaps position references to the new item ids', () => {
+    const pos = store.createItem({ show_id: 'default', type: 'position', label: 'Electric 1' });
+    store.createItem({ show_id: 'default', type: 'fixture', label: 'A', position: pos.id });
+    const doc = store.exportShow('default');
+
+    const imported = store.importShow(doc);
+    const importedItems = store.getItems(imported.id);
+    const importedPos = importedItems.find((i) => i.type === 'position');
+    const importedFixture = importedItems.find((i) => i.type === 'fixture');
+    assert.equal(importedFixture.position, importedPos.id);
+});
+
+test('importShow de-duplicates a colliding show name instead of overwriting', () => {
+    const doc = store.exportShow('default'); // name: 'My Show'
+    const first = store.importShow(doc);
+    assert.equal(first.name, 'My Show (2)');
+    const second = store.importShow(doc);
+    assert.equal(second.name, 'My Show (3)');
+
+    // The original 'default' show must be untouched.
+    assert.equal(store.getShow('default').name, 'My Show');
+    assert.equal(store.getShows().length, 3);
+});
+
+test('importShow backfills missing columns from an older export format', () => {
+    const doc = {
+        kind: 'lightsup-show',
+        exportVersion: 1,
+        show: { id: 'old', name: 'Sparse Show' }, // no company/venue/etc
+        items: [{ id: 'old-item', type: 'fixture', shape: 'par_64' }], // no x/y/label/etc
+    };
+    const imported = store.importShow(doc);
+    assert.equal(imported.company, store.DEFAULT_SHOW.company);
+    const [item] = store.getItems(imported.id);
+    assert.equal(item.x, 0);
+    assert.equal(item.label, '');
+    assert.equal(item.locked, false);
+});
+
 test('shapes (box/circle/line/arrow) store and round-trip through the generic item columns', () => {
     const box = store.createItem({ show_id: 'default', type: 'shape', shape: 'box', x: 10, y: 20, label: 'Set piece' });
     assert.equal(store.getItem(box.id).type, 'shape');

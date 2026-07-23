@@ -35,19 +35,6 @@ function switchShow(id) {
     store.setCurrentShowId(id);
     render.renderAll(store.getItems(id));
     updateShowInspector();
-    refreshShowSelect();
-}
-
-function refreshShowSelect() {
-    const select = document.getElementById('show_select');
-    select.innerHTML = '';
-    store.getShows().forEach((show) => {
-        const option = document.createElement('option');
-        option.value = show.id;
-        option.textContent = show.name;
-        option.selected = show.id === currentShowId;
-        select.appendChild(option);
-    });
 }
 
 function updateShowInspector() {
@@ -94,6 +81,37 @@ function closeLoadShowModal() {
     $('#load_show_modal').removeClass('is-active');
 }
 
+// Downloads the current show + its items as a self-contained JSON file —
+// the intended way to hand a plot to someone else (they Import it back).
+function exportCurrentShow() {
+    const data = store.exportShow(currentShowId);
+    if (!data) return;
+    const filename = `${(data.show.name || 'show').replace(/[^\w-]+/g, '_')}.lightsup.json`;
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+function deleteCurrentShow() {
+    if (store.getShows().length <= 1) {
+        alert("You can't delete your only show.");
+        return;
+    }
+    const name = store.getShow(currentShowId).name;
+    if (!confirm(`Delete "${name}"? This removes all its fixtures and positions. (Ctrl+Z undoes this like any other edit.)`)) return;
+
+    store.checkpoint();
+    store.deleteShow(currentShowId);
+    switchShow(store.getShows()[0].id);
+    refreshHistoryButtons();
+}
+
 // ---------------------------------------------------------------------------
 // Mode handling
 
@@ -137,7 +155,6 @@ async function afterHistoryChange() {
         store.setCurrentShowId(currentShowId);
     }
     await render.renderAll(store.getItems(currentShowId));
-    refreshShowSelect();
     updateShowInspector();
     clearInspector();
     refreshHistoryButtons();
@@ -414,7 +431,6 @@ $('#show_inspector input').change(function () {
     const value = $(this).val();
     store.checkpoint();
     store.updateShowField(currentShowId, name, value);
-    if (name === 'name') refreshShowSelect();
     refreshHistoryButtons();
 });
 
@@ -445,8 +461,29 @@ $('#new_show').click(() => {
     refreshHistoryButtons();
 });
 
-$('#show_select').change(function () {
-    switchShow($(this).val());
+$('#export_show').click(exportCurrentShow);
+$('#delete_show').click(deleteCurrentShow);
+
+$('#import_show').click(() => {
+    document.getElementById('import_show_file').click();
+});
+
+$('#import_show_file').on('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = ''; // reset so importing the same file twice still fires 'change'
+    if (!file) return;
+
+    try {
+        const data = JSON.parse(await file.text());
+        store.checkpoint();
+        const show = store.importShow(data);
+        switchShow(show.id);
+        refreshHistoryButtons();
+        statusToast(`Imported "${show.name}"`);
+    } catch (error) {
+        console.error('Import failed', error);
+        alert(`Could not import that file: ${error.message}`);
+    }
 });
 
 $('#menu_insert').on('click', 'a[data-type]', function () {

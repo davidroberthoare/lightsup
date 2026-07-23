@@ -17,7 +17,9 @@ export default [
                 console: 'readonly',
                 confirm: 'readonly',
                 prompt: 'readonly',
+                alert: 'readonly',
                 setTimeout: 'readonly',
+                Blob: 'readonly',
                 // vendored UMD libraries
                 alasql: 'readonly',
                 fabric: 'readonly',

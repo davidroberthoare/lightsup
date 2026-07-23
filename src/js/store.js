@@ -14,6 +14,14 @@ export const DATA_VERSION = 5;
 export const STORAGE_KEY = 'lightsup:data';
 const CURRENT_SHOW_KEY = 'current_show_id';
 
+// A per-show export is a different, smaller document than the full
+// multi-show STORAGE_KEY document, so it's versioned independently and
+// tagged with `kind` — that also lets importShow() reject a file that's
+// actually a full backup (or an unrelated JSON file) with a clear error
+// instead of silently importing garbage.
+export const SHOW_EXPORT_KIND = 'lightsup-show';
+export const SHOW_EXPORT_VERSION = 1;
+
 export const DEFAULT_SHOW = Object.freeze({
     id: 'default',
     name: 'My Show',
@@ -136,13 +144,22 @@ function migrateLegacy(storage) {
     return { shows, items };
 }
 
+// Backfills item columns added in later schema versions. Shared by the
+// full-document load path and importShow(), so an old export file (or one
+// missing fields for any other reason) still loads with sane defaults
+// instead of storing `undefined`.
+function normalizeItemFields(item) {
+    if (item.width === undefined) item.width = null;
+    if (item.locked === undefined) item.locked = false;
+    return item;
+}
+
 // Backfills columns added in later schema versions. Runs on every load
 // regardless of source, so it's the single place per-version upgrades go.
 function normalizeDoc(doc) {
     doc.items.forEach((item) => {
         if (item.show_id === undefined) item.show_id = DEFAULT_SHOW.id;
-        if (item.width === undefined) item.width = null;
-        if (item.locked === undefined) item.locked = false;
+        normalizeItemFields(item);
     });
     doc.shows.forEach((show) => {
         if (show.updated_at === undefined) show.updated_at = null;
@@ -307,6 +324,88 @@ export function updateShowField(id, name, value) {
     }
     alasql(`UPDATE shows SET ${name} = ? WHERE id = ?`, [value, id]);
     markDirty();
+}
+
+// Deleting the only remaining show would leave the app with nothing to
+// display or switch to, so it's disallowed — same reasoning as loadData()
+// always ensuring at least one show exists.
+export function deleteShow(id) {
+    if (getShows().length <= 1) {
+        throw new Error('Cannot delete the only show');
+    }
+    alasql('DELETE FROM items WHERE show_id = ?', [id]);
+    alasql('DELETE FROM shows WHERE id = ?', [id]);
+    markDirty();
+}
+
+// Returns `name`, or `name (2)`, `name (3)`, ... — whichever is the first
+// not already used by an existing show. Used so importing never silently
+// overwrites/collides with a same-named show.
+function uniqueShowName(name) {
+    const existing = new Set(getShows().map((s) => s.name));
+    if (!existing.has(name)) return name;
+    let n = 2;
+    while (existing.has(`${name} (${n})`)) n++;
+    return `${name} (${n})`;
+}
+
+// A self-contained snapshot of one show and its items — meant to be saved
+// to a file and handed to someone else, unlike STORAGE_KEY's full
+// multi-show document.
+export function exportShow(id) {
+    const show = getShow(id);
+    if (!show) return null;
+    return {
+        kind: SHOW_EXPORT_KIND,
+        exportVersion: SHOW_EXPORT_VERSION,
+        exportedAt: new Date().toISOString(),
+        show,
+        items: getItems(id),
+    };
+}
+
+// Imports a show from exportShow()'s format as a brand-new show: fresh ids
+// throughout (never reusing the file's ids, which could collide with an
+// existing show in this browser) and a de-duplicated name (never silently
+// overwriting an existing show with the same name). Returns the new show.
+export function importShow(data) {
+    if (!data || data.kind !== SHOW_EXPORT_KIND || !data.show || !Array.isArray(data.items)) {
+        throw new Error('This file is not a valid LightsUP show export.');
+    }
+
+    const newShowId = randomId();
+    const newShow = {
+        ...DEFAULT_SHOW,
+        ...data.show,
+        id: newShowId,
+        name: uniqueShowName(data.show.name || 'Imported Show'),
+        updated_at: null, // not yet saved in this browser
+    };
+
+    // Items reference each other via `position` (a fixture pointing at its
+    // pipe/truss's item id), so ids have to be remapped consistently, not
+    // just regenerated independently per item.
+    const idMap = new Map();
+    data.items.forEach((item) => idMap.set(item.id, randomId()));
+
+    // Same per-column defaulting as createItem(), so a sparse or older-format
+    // export still inserts cleanly instead of storing `undefined` for
+    // whatever columns it happens to be missing.
+    const newItems = data.items.map((item) => {
+        const copy = { id: idMap.get(item.id) };
+        for (const col of ITEM_COLUMNS) {
+            if (col === 'id') continue;
+            copy[col] = item[col] !== undefined ? item[col] : ITEM_DEFAULTS[col];
+        }
+        copy.show_id = newShowId;
+        copy.position = item.position && idMap.has(item.position) ? idMap.get(item.position) : '';
+        return copy;
+    });
+
+    alasql('INSERT INTO shows VALUES ?', [newShow]);
+    newItems.forEach((item) => alasql('INSERT INTO items VALUES ?', [item]));
+    markDirty();
+    return newShow;
 }
 
 // ---------------------------------------------------------------------------
