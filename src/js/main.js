@@ -35,6 +35,7 @@ function switchShow(id) {
     store.setCurrentShowId(id);
     render.renderAll(store.getItems(id));
     updateShowInspector();
+    pasteOffsetCount = 0; // a fresh show is a fresh context for the paste-stagger offset
 }
 
 function updateShowInspector() {
@@ -49,6 +50,7 @@ function boot() {
     const current = store.loadData();
     switchShow(current);
     refreshHistoryButtons();
+    refreshEditMenuState();
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +160,7 @@ async function afterHistoryChange() {
     updateShowInspector();
     clearInspector();
     refreshHistoryButtons();
+    refreshEditMenuState();
 }
 
 async function performUndo() {
@@ -373,11 +376,15 @@ function updateSelection(evt) {
         group.lockMovementY = hasLocked;
     }
     updateInspector(evt.selected.map((obj) => obj.id));
+    refreshEditMenuState();
 }
 
 canvas.on('selection:created', updateSelection);
 canvas.on('selection:updated', updateSelection);
-canvas.on('selection:cleared', clearInspector);
+canvas.on('selection:cleared', () => {
+    clearInspector();
+    refreshEditMenuState();
+});
 
 function deleteSelected() {
     // Locked objects accept no change, deletion included — skip them and
@@ -433,6 +440,110 @@ $('#show_inspector input').change(function () {
     store.updateShowField(currentShowId, name, value);
     refreshHistoryButtons();
 });
+
+// ---------------------------------------------------------------------------
+// Cut / copy / paste
+//
+// An in-memory clipboard, not the OS clipboard: items are structured data
+// (every column, not just a label's text), not something that needs to
+// leave the page or interoperate with other apps. Works on any item type —
+// copySelected() just snapshots whatever store rows the current selection
+// maps to, with no per-type branching.
+
+let clipboard = [];
+let pasteOffsetCount = 0;
+const PASTE_OFFSET = 20; // scene units per repeated paste, so a paste-paste-paste run fans out visibly
+
+function refreshEditMenuState() {
+    const hasSelection = canvas.getActiveObjects().length > 0;
+    $('#cut_item, #copy_item').toggleClass('is-disabled', !hasSelection);
+    $('#paste_item').toggleClass('is-disabled', clipboard.length === 0);
+}
+
+function copySelected() {
+    const objs = canvas.getActiveObjects();
+    if (objs.length === 0) return;
+    clipboard = objs.map((obj) => store.getItem(obj.id)).filter(Boolean);
+    pasteOffsetCount = 0;
+    refreshEditMenuState();
+}
+
+function cutSelected() {
+    const objs = canvas.getActiveObjects();
+    if (objs.length === 0) return;
+    copySelected(); // copy the whole selection regardless of lock — copying isn't a change
+
+    // Deletion still respects locks, same as the Delete key: a locked
+    // object accepts no change, cut included.
+    const deletable = objs.filter((obj) => {
+        const item = store.getItem(obj.id);
+        return !(item && item.locked);
+    });
+    if (deletable.length === 0) return;
+
+    store.checkpoint();
+    canvas.discardActiveObject();
+    deletable.forEach((obj) => {
+        const changes = store.deleteItem(obj.id);
+        render.removeItemObject(obj.id);
+        applyNumberChanges(changes);
+    });
+    canvas.requestRenderAll();
+    refreshHistoryButtons();
+    refreshEditMenuState();
+}
+
+async function pasteClipboard() {
+    if (clipboard.length === 0) return;
+    pasteOffsetCount++;
+    const offset = pasteOffsetCount * PASTE_OFFSET;
+
+    store.checkpoint();
+    const pasted = clipboard.map((original) => {
+        const fields = { ...original };
+        delete fields.id;
+        fields.show_id = currentShowId; // lets copy-in-one-show, paste-in-another work for free
+        fields.x = original.x + offset;
+        fields.y = original.y + offset;
+        // A pasted fixture starts off its old position/pipe — it's
+        // re-resolved below from where it actually landed, same as any
+        // freshly placed or dragged fixture.
+        fields.position = '';
+        fields.number = null;
+        fields.locked = false; // a copy of a locked object isn't itself locked
+        return store.createItem(fields);
+    });
+
+    const rendered = await Promise.all(pasted.map((item) => render.renderItem(item)));
+
+    pasted.forEach((item, i) => {
+        const obj = rendered[i];
+        if (!obj || item.type !== 'fixture') return;
+        const position = canvas.getObjects().find(
+            (o) => o.itemType === 'position' && obj.intersectsWithObject(o));
+        if (position) {
+            const changes = store.assignFixtureToPosition(item.id, position.id);
+            applyNumberChanges(changes);
+        }
+    });
+
+    // Select the pasted objects, matching standard paste behavior and
+    // letting the user immediately drag them further if they landed wrong.
+    canvas.discardActiveObject();
+    const validObjs = rendered.filter(Boolean);
+    if (validObjs.length === 1) {
+        canvas.setActiveObject(validObjs[0]);
+    } else if (validObjs.length > 1) {
+        canvas.setActiveObject(new fabric.ActiveSelection(validObjs, { canvas }));
+    }
+    canvas.requestRenderAll();
+    refreshHistoryButtons();
+    refreshEditMenuState();
+}
+
+$('#cut_item').click(cutSelected);
+$('#copy_item').click(copySelected);
+$('#paste_item').click(pasteClipboard);
 
 // ---------------------------------------------------------------------------
 // Menus and keyboard
@@ -511,6 +622,15 @@ $(document).keydown((e) => {
         e.preventDefault();
         store.saveData();
         statusToast('saved');
+    } else if (e.ctrlKey && !inField && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        copySelected();
+    } else if (e.ctrlKey && !inField && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        cutSelected();
+    } else if (e.ctrlKey && !inField && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        pasteClipboard();
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && !inField) {
         deleteSelected();
     } else if (e.key === 'Escape') {
