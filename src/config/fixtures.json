@@ -42,5 +42,9 @@
     {
         "name": "Moving Light (generic)",
         "symbol": "moving_light"
+    },
+    {
+        "name": "Practical",
+        "symbol": "practical"
     }
-]
+]   
