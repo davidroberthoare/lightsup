@@ -11,7 +11,7 @@
    enable-background="new 0 0 50.4 180"
    xml:space="preserve"
    id="svg2"
-   sodipodi:docname="source4_26.svg"
+   sodipodi:docname="source4_19.svg"
    inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -46,6 +46,6 @@
 
 <path
    style="fill:none;stroke:#000000;stroke-width:1.28;stroke-dasharray:none"
-   d="m 43.948505,40.399445 13.804992,9.867476"
+   d="m 43.948505,40.399445 13.804992,9.867476 M 41.727593,50.947783 56.084641,40.398648"
    id="path2953"
-   sodipodi:nodetypes="cc" /></svg>
+   sodipodi:nodetypes="cccc" /></svg>

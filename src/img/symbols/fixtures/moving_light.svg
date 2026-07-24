@@ -4,7 +4,44 @@
    width="100"
    height="100"
    viewBox="0 0 100 100"
-   xmlns="http://www.w3.org/2000/svg">
-  <polygon points="50,15 71.65,27.5 71.65,52.5 50,65 28.35,52.5 28.35,27.5" style="fill:none;stroke:#000000;stroke-width:1" />
-  <circle cx="50" cy="40" r="6" style="fill:none;stroke:#000000;stroke-width:1" />
+   id="svg10946"
+   sodipodi:docname="moving_light.svg"
+   inkscape:version="1.2.2 (b0a8486541, 2022-12-01)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs10950" />
+  <sodipodi:namedview
+     id="namedview10948"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     showgrid="false"
+     inkscape:zoom="8.38"
+     inkscape:cx="50"
+     inkscape:cy="50"
+     inkscape:window-width="1920"
+     inkscape:window-height="1008"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg10946" />
+  <path
+     d="M 63.975455,14.651792 C 63.975455,6.836251 57.719109,0.5 50.000268,0.5 c -7.718305,0 -13.975723,6.336251 -13.975723,14.151792 0,9.981007 0,19.962556 0,29.943562 9.31697,0 18.63394,0 27.95091,0 0,-9.980463 0,-19.962555 0,-29.943562 z"
+     id="path8"
+     inkscape:connector-curvature="0"
+     style="fill:#ffffff;stroke:#000000;stroke-width:1;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1" />
+  <rect
+     style="fill:#ffffff;stroke:#000000;stroke-width:1.28"
+     id="rect11148"
+     width="53.816452"
+     height="16.882713"
+     x="23.176615"
+     y="15.269052" />
 </svg>

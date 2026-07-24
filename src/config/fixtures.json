@@ -8,8 +8,28 @@
         "symbol": "fresnel_6"
     },
     {
+        "name": "Fresnel 8\"",
+        "symbol": "fresnel_8"
+    },
+    {
+        "name": "Source-4 10°",
+        "symbol": "source4_10"
+    },
+    {
+        "name": "Source-4 19°",
+        "symbol": "source4_19"
+    },
+    {
         "name": "Source-4 26°",
         "symbol": "source4_26"
+    },
+    {
+        "name": "Source-4 36°",
+        "symbol": "source4_36"
+    },
+    {
+        "name": "Source-4 50°",
+        "symbol": "source4_50"
     },
     {
         "name": "Strip Light",
