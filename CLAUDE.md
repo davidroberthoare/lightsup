@@ -37,6 +37,18 @@ The deployable app lives entirely in `src/`; tests and tooling live at the repo 
 
 `src/config/fixtures.json` defines the Insert→Fixtures menu; each entry's `symbol` must have a matching SVG at `src/img/symbols/fixtures/<symbol>.svg`. Adding a fixture type = JSON entry + SVG file.
 
+### PWA / offline caching
+
+The app is installable and works fully offline via `src/sw.js`, registered from both entry points by `src/js/register-sw.js` (a plain script, not a module — it must keep working even if the module graph fails). `src/sw.js` **must** live at the `src/` root, not under `src/js/`: a service worker's default scope is the directory it's served from, and a worker under `js/` would never control `index.html`/`report.html`.
+
+`src/config/pwa.json` is the one file meant to be hand-edited to manage caching:
+- `cacheVersion` — bump this (any string) to cache-bust: `activate()` deletes every `lightsup-cache-*` whose name doesn't match the current version, forcing a full re-fetch on next load.
+- `offlineCacheEnabled` — set `false` to disable offline caching entirely (plain network passthrough) and tear down any caches this worker previously created. Useful during local development, where a stale cache is more often in the way than helpful.
+
+`pwa.json` itself is always fetched network-first (falling back to cache only if offline) — otherwise a version bump or toggle flip could never be observed, since the file announcing the change would itself be served stale. The service worker's precache list (`CORE_URLS` in sw.js) is hand-maintained for the app shell, but fixture symbol SVGs are read from `config/fixtures.json` at install time rather than hardcoded, so adding a fixture type doesn't also require touching `sw.js`.
+
+Icons live in `src/icons/` (`icon.svg`/`icon-maskable.svg` are the source files; the PNGs are generated from them, e.g. via `inkscape file.svg --export-type=png --export-filename=out.png -w N -h N`) and are referenced from `src/manifest.json` and the `<link rel="icon"/apple-touch-icon>` tags in both HTML entry points.
+
 ### Testing notes
 
 Tests run the real vendored AlaSQL in Node via `tests/helpers/alasql-loader.js` (a CommonJS shim needed because the root package.json sets `"type": "module"`), and pass a fake storage object to store functions — every store function takes an optional storage parameter defaulting to `localStorage`. Store logic is covered there; the render layer and controllers are browser-only and covered by `src/smoke-test.html` instead.
