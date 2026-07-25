@@ -281,7 +281,19 @@ function persistObject(obj) {
     }
 }
 
+let discardingSelection = false;
+
 canvas.on('object:modified', (e) => {
+    // Fabric's own discardActiveObject() checks canvas._currentTransform.target
+    // === the object being discarded, and if so runs endCurrentTransform() ->
+    // _finalizeCurrentTransform() *before* clearing _currentTransform — which
+    // re-fires this very 'object:modified' event on the same ActiveSelection
+    // (actionPerformed never gets cleared) for as long as _currentTransform
+    // still points at it. Without this guard, calling discardActiveObject()
+    // below re-enters this handler synchronously, which calls it again, and
+    // so on, until the call stack overflows.
+    if (discardingSelection) return;
+
     const obj = e.target;
     if (!obj) return;
 
@@ -295,7 +307,12 @@ canvas.on('object:modified', (e) => {
     // each child individually.
     if (obj instanceof fabric.ActiveSelection) {
         const children = obj.getObjects();
-        canvas.discardActiveObject();
+        discardingSelection = true;
+        try {
+            canvas.discardActiveObject();
+        } finally {
+            discardingSelection = false;
+        }
         children.forEach((child) => persistObject(child));
         canvas.requestRenderAll();
     } else {
