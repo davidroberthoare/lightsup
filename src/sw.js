@@ -13,41 +13,41 @@
 // never be observed, because the very file that announces the change would
 // itself be served stale from the old cache.
 
-const CONFIG_URL = './config/pwa.json';
+const CONFIG_URL = '/config/pwa.json';
 const CACHE_PREFIX = 'lightsup-cache-';
 
 // The app shell. Fixture symbol SVGs aren't listed here — they're read from
 // config/fixtures.json at install time (see precacheUrls) so adding a
 // fixture type doesn't also require editing this file.
 const CORE_URLS = [
-    './',
-    './index.html',
-    './report.html',
-    './manifest.json',
-    './config/pwa.json',
-    './config/fixtures.json',
-    './css/bulma.min.css',
-    './css/styles.css',
-    './css/tabulator.min.css',
-    './js/alasql.min.js',
-    './js/jquery.min.js',
-    './js/fabric.min.js',
-    './js/tabulator.min.js',
-    './js/main.js',
-    './js/render.js',
-    './js/report-main.js',
-    './js/store.js',
-    './js/util.js',
-    './js/register-sw.js',
-    './img/symbols/util/dimmer.svg',
-    './icons/icon.svg',
-    './icons/icon-maskable.svg',
-    './icons/icon-192.png',
-    './icons/icon-512.png',
-    './icons/icon-maskable-192.png',
-    './icons/icon-maskable-512.png',
-    './icons/apple-touch-icon.png',
-    './icons/favicon-32.png',
+    '/',
+    '/index.html',
+    '/report.html',
+    '/manifest.json',
+    '/config/pwa.json',
+    '/config/fixtures.json',
+    '/css/bulma.min.css',
+    '/css/styles.css',
+    '/css/tabulator.min.css',
+    '/js/alasql.min.js',
+    '/js/jquery.min.js',
+    '/js/fabric.min.js',
+    '/js/tabulator.min.js',
+    '/js/main.js',
+    '/js/render.js',
+    '/js/report-main.js',
+    '/js/store.js',
+    '/js/util.js',
+    '/js/register-sw.js',
+    '/img/symbols/util/dimmer.svg',
+    '/img/icons/icon.svg',
+    '/img/icons/icon-maskable.svg',
+    '/img/icons/icon-192.png',
+    '/img/icons/icon-512.png',
+    '/img/icons/icon-maskable-192.png',
+    '/img/icons/icon-maskable-512.png',
+    '/img/icons/apple-touch-icon.png',
+    '/img/icons/favicon-32.png',
 ];
 
 // Fetched once per worker lifetime and reused; the worker can be killed and
@@ -74,9 +74,9 @@ function isConfigRequest(url) {
 async function precacheUrls() {
     const urls = CORE_URLS.slice();
     try {
-        const res = await fetch('./config/fixtures.json', { cache: 'no-store' });
+        const res = await fetch('/config/fixtures.json', { cache: 'no-store' });
         const fixtures = await res.json();
-        fixtures.forEach((fixture) => urls.push(`./img/symbols/fixtures/${fixture.symbol}.svg`));
+        fixtures.forEach((fixture) => urls.push(`/img/symbols/fixtures/${fixture.symbol}.svg`));
     } catch {
         // Offline install with fixtures.json unreachable — the rest of the
         // shell still caches; any missed symbol fills in via the runtime
