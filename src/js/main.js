@@ -13,6 +13,11 @@ const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 20;
 const CLICK_DRAG_THRESHOLD = 4; // px of mouse travel that still counts as a click
 
+const SPEED_NUMBER_MIN = 0;
+const SPEED_NUMBER_MAX = 1000;
+const SPEED_NUMBER_STEP = 1;
+const SPEED_NUMBER_BIG_STEP = 10;
+
 // Which inspector fields apply to which item type. 'locked' applies to all —
 // it's the one field a locked object still accepts (see the change handler).
 const INSPECTOR_FIELDS = {
@@ -118,17 +123,40 @@ function deleteCurrentShow() {
 // Mode handling
 
 function switchMode(mode, type, subtype) {
+    const wasSpeedNumber = MODE.action === 'speed-number';
     MODE.action = mode;
     MODE.type = type;
     MODE.subtype = subtype;
 
     $('.navbar-item').removeClass('selected');
     canvas.defaultCursor = 'pointer';
+    $('#speed_number_badge').hide();
+
+    // Restore normal selection once speed-numbering ends (see the mode's own
+    // branch below for why it's turned off in the first place).
+    if (wasSpeedNumber && mode !== 'speed-number') {
+        setAllSelectable(true);
+    }
 
     if (mode === 'insert') {
         $('#menu_insert').addClass('selected');
         canvas.defaultCursor = 'crosshair';
+    } else if (mode === 'speed-number') {
+        $('#speed_number_menu_trigger').addClass('selected');
+        canvas.defaultCursor = 'crosshair';
+        canvas.discardActiveObject();
+        // Objects stay evented (so clicks still resolve a target) but not
+        // selectable, so rapid-fire clicking through fixtures never shows
+        // selection handles or lets one get dragged mid-click.
+        setAllSelectable(false);
+        updateSpeedNumberBadge();
+        $('#speed_number_badge').show();
+        canvas.requestRenderAll();
     }
+}
+
+function setAllSelectable(selectable) {
+    canvas.getObjects().forEach((obj) => { obj.selectable = selectable; });
 }
 
 // ---------------------------------------------------------------------------
@@ -289,35 +317,82 @@ canvas.on('mouse:move', (opt) => {
         lastPosX = e.clientX;
         lastPosY = e.clientY;
     }
+    if (MODE.action === 'speed-number') {
+        positionSpeedNumberBadge(opt.e.clientX, opt.e.clientY);
+    }
 });
 
 canvas.on('mouse:up', (opt) => {
     isPanning = false;
-    if (MODE.action !== 'insert' || !downInfo) return;
-
-    // Only insert on a plain left-click on empty canvas — not on drag-ends,
-    // pans, or clicks on existing objects.
-    const wasClick = downInfo.button === 0
-        && !downInfo.target
-        && Math.hypot(opt.e.clientX - downInfo.x, opt.e.clientY - downInfo.y) < CLICK_DRAG_THRESHOLD;
+    if (!downInfo) return;
+    const info = downInfo;
     downInfo = null;
-    if (!wasClick) return;
 
-    store.checkpoint();
-    const item = store.createItem({
-        show_id: currentShowId,
-        type: MODE.type,
-        shape: MODE.subtype,
-        x: opt.scenePoint.x,
-        y: opt.scenePoint.y,
-        // A blank Textbox renders nothing and can't be clicked to edit, so
-        // give it a starting caption the way other item types get one for
-        // free from their symbol/shape.
-        label: MODE.type === 'shape' && MODE.subtype === 'text' ? 'Text' : undefined,
-    });
-    render.renderItem(item);
-    refreshHistoryButtons();
+    const wasClick = info.button === 0
+        && Math.hypot(opt.e.clientX - info.x, opt.e.clientY - info.y) < CLICK_DRAG_THRESHOLD;
+
+    if (MODE.action === 'insert') {
+        // Only insert on a plain left-click on empty canvas — not on
+        // drag-ends, pans, or clicks on existing objects.
+        if (!wasClick || info.target) return;
+        store.checkpoint();
+        const item = store.createItem({
+            show_id: currentShowId,
+            type: MODE.type,
+            shape: MODE.subtype,
+            x: opt.scenePoint.x,
+            y: opt.scenePoint.y,
+            // A blank Textbox renders nothing and can't be clicked to edit,
+            // so give it a starting caption the way other item types get one
+            // for free from their symbol/shape.
+            label: MODE.type === 'shape' && MODE.subtype === 'text' ? 'Text' : undefined,
+        });
+        render.renderItem(item);
+        refreshHistoryButtons();
+    } else if (MODE.action === 'speed-number') {
+        // Only a fixture, clicked (not dragged), counts — everything else is
+        // silently ignored so a stray click on a position/shape/empty canvas
+        // doesn't cost the pending number.
+        if (!wasClick || !info.target || info.target.itemType !== 'fixture') return;
+        assignSpeedNumber(info.target);
+    }
 });
+
+// ---------------------------------------------------------------------------
+// Speed-numbering — click fixtures in sequence to stamp channel or dimmer
+// numbers onto them, incrementing after each one (as on an ETC console's
+// speed-numbering mode). MODE.subtype holds which field ('channel' or
+// 'dimmer') while this mode is active.
+
+let speedNumberNext = 1;
+
+function updateSpeedNumberBadge() {
+    const label = MODE.subtype === 'dimmer' ? 'Dim' : 'Ch';
+    $('#speed_number_badge').text(`${label} ${speedNumberNext}`);
+}
+
+function positionSpeedNumberBadge(clientX, clientY) {
+    $('#speed_number_badge').css({ left: `${clientX}px`, top: `${clientY}px` });
+}
+
+function assignSpeedNumber(obj) {
+    const item = store.getItem(obj.id);
+    if (!item || item.locked) return; // locked accepts no change, same as everywhere else
+
+    const field = MODE.subtype;
+    store.checkpoint();
+    store.updateItemField(obj.id, field, speedNumberNext);
+    render.updateItemText(obj.id, field, speedNumberNext);
+    refreshHistoryButtons();
+
+    speedNumberNext = Math.min(SPEED_NUMBER_MAX, speedNumberNext + SPEED_NUMBER_STEP);
+    updateSpeedNumberBadge();
+}
+
+function enterSpeedNumberMode(field) {
+    speedNumberNext = 1;
+    switchMode('speed-number', null, field);
+}
 
 // ---------------------------------------------------------------------------
 // Selection and inspector
@@ -720,6 +795,9 @@ $('#distribute_vertical').click(() => distributeSelection('y'));
 $('#distribute_rotation_horizontal').click(() => distributeRotation('x'));
 $('#distribute_rotation_vertical').click(() => distributeRotation('y'));
 
+$('#speed_number_channel').click(() => enterSpeedNumberMode('channel'));
+$('#speed_number_dimmer').click(() => enterSpeedNumberMode('dimmer'));
+
 // ---------------------------------------------------------------------------
 // Menus and keyboard
 
@@ -808,6 +886,12 @@ $(document).keydown((e) => {
         pasteClipboard();
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && !inField) {
         deleteSelected();
+    } else if (MODE.action === 'speed-number' && !inField
+        && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+        const delta = { ArrowUp: SPEED_NUMBER_STEP, ArrowDown: -SPEED_NUMBER_STEP, ArrowRight: SPEED_NUMBER_BIG_STEP, ArrowLeft: -SPEED_NUMBER_BIG_STEP }[e.key];
+        speedNumberNext = Math.min(SPEED_NUMBER_MAX, Math.max(SPEED_NUMBER_MIN, speedNumberNext + delta));
+        updateSpeedNumberBadge();
     } else if (e.key === 'Escape') {
         closeLoadShowModal();
         switchMode('default', null, null);

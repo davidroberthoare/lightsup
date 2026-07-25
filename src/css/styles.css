@@ -73,6 +73,28 @@ body {
     overflow: hidden;
 }
 
+/* Follows the cursor while speed-numbering mode is active, showing the
+   channel/dimmer number about to be stamped on the next fixture clicked. */
+#speed_number_badge {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    transform: translate(14px, 14px);
+    z-index: 100;
+    pointer-events: none;
+    background-color: #f2ff3a;
+    color: #111111;
+    font-family: sans-serif;
+    font-weight: bold;
+    font-size: 13px;
+    line-height: 1;
+    padding: 4px 8px;
+    border: 1px solid #111111;
+    border-radius: 999px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
 
 #floating-panel {
     position: fixed;
