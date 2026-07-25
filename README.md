@@ -1,6 +1,6 @@
 # LightsUP
 
-LightsUP is a simple theatrical lighting drafting program. This is a work in progress and is intended for hobbyists and enthusiasts interested in theatrical lighting design. Demo available here: https://projects.davidhoare.net/lightsup/
+LightsUP is a simple theatrical lighting drafting program. This is a work in progress and is intended for hobbyists and enthusiasts interested in theatrical lighting design. A free working version is available here: https://lightsup.drhmedia.net/
 
 ## Features
 
