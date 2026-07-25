@@ -324,8 +324,9 @@ canvas.on('mouse:wheel', (opt) => {
         if (zoom > ZOOM_MAX) zoom = ZOOM_MAX;
         if (zoom < ZOOM_MIN) zoom = ZOOM_MIN;
         canvas.zoomToPoint({ x: offsetX, y: offsetY }, zoom);
+    } else {
+        canvas.relativePan({ x: -opt.e.deltaX, y: -opt.e.deltaY });
     }
-    canvas.relativePan({ x: -opt.e.deltaX, y: -opt.e.deltaY });
 });
 
 let isPanning = false;
