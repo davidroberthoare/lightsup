@@ -537,6 +537,8 @@ function refreshEditMenuState() {
         .toggleClass('is-disabled', selectedCount < 2);
     $('#distribute_horizontal, #distribute_vertical, #distribute_rotation_horizontal, #distribute_rotation_vertical')
         .toggleClass('is-disabled', selectedCount < 3);
+    $('#layer_up, #layer_down, #layer_top, #layer_bottom')
+        .toggleClass('is-disabled', selectedCount === 0);
 }
 
 function copySelected() {
@@ -590,6 +592,7 @@ async function pasteClipboard() {
         fields.position = '';
         fields.number = null;
         fields.locked = false; // a copy of a locked object isn't itself locked
+        delete fields.zindex; // let createItem put the copy on top, not wherever its source was stacked
         return store.createItem(fields);
     });
 
@@ -783,6 +786,77 @@ function distributeRotation(axis) {
     refreshEditMenuState();
 }
 
+// ---------------------------------------------------------------------------
+// Layer order
+//
+// The canvas's own stacking order IS the z-order — there's no separate
+// z-index property to keep in sync, just each item's position in
+// canvas.getObjects(). The grid (added first, never tagged with an id) stays
+// fixed at the very back; everything below reorders only among the tagged
+// items themselves so a layer command can never push something under it.
+
+// Bottom-to-top, matching store.getItems()'s zindex order (see render.js's
+// renderAll, which restacks to this same order after a full redraw).
+function itemObjectsInOrder() {
+    return canvas.getObjects().filter((obj) => obj.id);
+}
+
+function applyLayerOrder(order) {
+    let cursor = 1; // index 0 is the grid
+    order.forEach((obj) => {
+        canvas.moveObjectTo(obj, cursor);
+        cursor += 1;
+        // A box/circle/line/arrow's caption is a sibling object, not a group
+        // child (see render.js's SHAPE_LABEL_OFFSET comment) — without this
+        // it would stay wherever it was, and could end up buried under some
+        // other shape that just moved in front of it.
+        if (obj.itemType === 'shape') {
+            const label = render.getShapeLabel(obj.id);
+            if (label) {
+                canvas.moveObjectTo(label, cursor);
+                cursor += 1;
+            }
+        }
+    });
+    canvas.requestRenderAll();
+    store.setItemsOrder(order.map((obj) => obj.id));
+}
+
+// direction: 'up'/'down' nudge one step, 'top'/'bottom' go all the way.
+// Multiple selected objects move as a block, keeping their relative order —
+// for the one-step cases that means walking the selection bottom-first for
+// 'up' and top-first for 'down', so an object already moved doesn't get
+// leapfrogged by the next one still waiting its turn.
+function layerSelection(direction) {
+    const selected = new Set(canvas.getActiveObjects().filter((obj) => {
+        const item = store.getItem(obj.id);
+        return !(item && item.locked);
+    }));
+    if (selected.size === 0) return;
+
+    let order = itemObjectsInOrder();
+
+    if (direction === 'top' || direction === 'bottom') {
+        const selectedItems = order.filter((obj) => selected.has(obj));
+        const others = order.filter((obj) => !selected.has(obj));
+        order = direction === 'top' ? [...others, ...selectedItems] : [...selectedItems, ...others];
+    } else {
+        const step = direction === 'up' ? 1 : -1;
+        const selectedInOrder = order.filter((obj) => selected.has(obj));
+        const sequence = direction === 'up' ? selectedInOrder : [...selectedInOrder].reverse();
+        sequence.forEach((obj) => {
+            const i = order.indexOf(obj);
+            const j = i + step;
+            if (j < 0 || j >= order.length) return;
+            [order[i], order[j]] = [order[j], order[i]];
+        });
+    }
+
+    store.checkpoint();
+    applyLayerOrder(order);
+    refreshHistoryButtons();
+}
+
 $('#align_top').click(() => alignSelection('top'));
 $('#align_middle').click(() => alignSelection('middle'));
 $('#align_bottom').click(() => alignSelection('bottom'));
@@ -797,6 +871,11 @@ $('#distribute_rotation_vertical').click(() => distributeRotation('y'));
 
 $('#speed_number_channel').click(() => enterSpeedNumberMode('channel'));
 $('#speed_number_dimmer').click(() => enterSpeedNumberMode('dimmer'));
+
+$('#layer_up').click(() => layerSelection('up'));
+$('#layer_down').click(() => layerSelection('down'));
+$('#layer_top').click(() => layerSelection('top'));
+$('#layer_bottom').click(() => layerSelection('bottom'));
 
 // ---------------------------------------------------------------------------
 // Menus and keyboard
@@ -886,6 +965,12 @@ $(document).keydown((e) => {
         pasteClipboard();
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && !inField) {
         deleteSelected();
+    } else if (!inField && e.key === 'PageUp') {
+        e.preventDefault();
+        layerSelection(e.shiftKey ? 'top' : 'up');
+    } else if (!inField && e.key === 'PageDown') {
+        e.preventDefault();
+        layerSelection(e.shiftKey ? 'bottom' : 'down');
     } else if (MODE.action === 'speed-number' && !inField
         && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();

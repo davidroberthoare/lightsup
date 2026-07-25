@@ -32,6 +32,7 @@ The deployable app lives entirely in `src/`; tests and tooling live at the repo 
 - A fixture "hangs on" a position when their canvas objects intersect after a move; `assignFixtureToPosition` maintains the link and renumbering.
 - Unit numbering runs stage-right to stage-left: fixtures on a position are numbered by **descending x** (then descending y). An unassigned fixture has `number: null` (rendered blank).
 - Generic field updates (`updateItemField`/`updateShowField`) validate column names against whitelists — extend `ITEM_FIELDS`/`SHOW_FIELDS` when adding columns, and add the column to the table schema, `ITEM_COLUMNS`, and `ITEM_DEFAULTS`.
+- Layer order (Edit→Layer, PageUp/PageDown) is persisted as each item's `zindex`; `getItems()` orders by it, and a new item defaults to the top of its own show's stack (`nextZIndex`). The canvas stacking order is the actual working copy during a layer command — `main.js`'s `layerSelection`/`applyLayerOrder` reorder the live Fabric objects first, then `setItemsOrder()` renumbers `zindex` to match. `render.js`'s `renderAll` has to re-assert that same order after its own async render pass, since each item's SVG can finish loading (and thus get added to the canvas) in any order.
 
 ### Fixture catalog
 

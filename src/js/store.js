@@ -10,7 +10,7 @@ import { randomId } from './util.js';
 
 const alasql = globalThis.alasql;
 
-export const DATA_VERSION = 5;
+export const DATA_VERSION = 6;
 export const STORAGE_KEY = 'lightsup:data';
 const CURRENT_SHOW_KEY = 'current_show_id';
 
@@ -37,10 +37,10 @@ export const DEFAULT_SHOW = Object.freeze({
 const ITEM_FIELDS = new Set(['x', 'y', 'angle', 'scalex', 'scaley', 'width', 'position', 'number', 'label', 'channel', 'dimmer', 'gel', 'locked']);
 const SHOW_FIELDS = new Set(['name', 'company', 'venue', 'designer', 'date']);
 
-const ITEM_COLUMNS = ['id', 'show_id', 'type', 'shape', 'x', 'y', 'angle', 'scalex', 'scaley', 'width', 'position', 'number', 'label', 'channel', 'dimmer', 'gel', 'locked'];
+const ITEM_COLUMNS = ['id', 'show_id', 'type', 'shape', 'x', 'y', 'angle', 'scalex', 'scaley', 'width', 'position', 'number', 'label', 'channel', 'dimmer', 'gel', 'locked', 'zindex'];
 const ITEM_DEFAULTS = {
     show_id: '', type: '', shape: '', x: 0, y: 0, angle: 0, scalex: 1, scaley: 1, width: null,
-    position: '', number: null, label: '', channel: '', dimmer: '', gel: '', locked: false,
+    position: '', number: null, label: '', channel: '', dimmer: '', gel: '', locked: false, zindex: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -94,7 +94,8 @@ export function initDB(wipe) {
         channel STRING,
         dimmer STRING,
         gel STRING,
-        locked BOOLEAN
+        locked BOOLEAN,
+        zindex INT
         )`);
 }
 
@@ -157,8 +158,12 @@ function normalizeItemFields(item) {
 // Backfills columns added in later schema versions. Runs on every load
 // regardless of source, so it's the single place per-version upgrades go.
 function normalizeDoc(doc) {
-    doc.items.forEach((item) => {
+    doc.items.forEach((item, index) => {
         if (item.show_id === undefined) item.show_id = DEFAULT_SHOW.id;
+        // Pre-zindex saves have no stacking order recorded; falling back to
+        // each item's position in the saved array preserves whatever order
+        // it already rendered in rather than tying everything at 0.
+        if (item.zindex === undefined) item.zindex = index;
         normalizeItemFields(item);
     });
     doc.shows.forEach((show) => {
@@ -411,8 +416,11 @@ export function importShow(data) {
 // ---------------------------------------------------------------------------
 // Items
 
+// Ordered bottom-to-top so callers (renderAll) can render/stack items in the
+// same order they'll actually be drawn in — see setItemsOrder for how that
+// order is changed (layer up/down/top/bottom).
 export function getItems(showId) {
-    return alasql('SELECT * FROM items WHERE show_id = ?', [showId]);
+    return alasql('SELECT * FROM items WHERE show_id = ? ORDER BY zindex', [showId]);
 }
 
 export function getItem(id) {
@@ -425,15 +433,38 @@ export function getItemsByIds(ids) {
     return alasql(`SELECT * FROM items WHERE id IN (${placeholders})`, ids);
 }
 
+// A show's items with no zindex yet default to 0 (see ITEM_DEFAULTS), so the
+// top of the stack is just the highest zindex currently in use for that show.
+function nextZIndex(showId) {
+    const rows = alasql('SELECT MAX(zindex) AS maxz FROM items WHERE show_id = ?', [showId]);
+    const max = rows[0] && rows[0].maxz;
+    return (typeof max === 'number' ? max : -1) + 1;
+}
+
 export function createItem(fields) {
     const item = { id: randomId() };
     for (const col of ITEM_COLUMNS) {
         if (col === 'id') continue;
         item[col] = fields[col] !== undefined ? fields[col] : ITEM_DEFAULTS[col];
     }
+    // A fresh item — including a pasted copy, which deletes its source's
+    // zindex before calling in here — always starts on top of its show,
+    // never wherever ITEM_DEFAULTS' plain 0 would land it.
+    if (fields.zindex === undefined) item.zindex = nextZIndex(item.show_id);
     alasql('INSERT INTO items VALUES ?', [item]);
     markDirty();
     return item;
+}
+
+// Persists a new bottom-to-top stacking order for a show: ids is every item
+// in that show, in the order the render layer settled on after a layer
+// up/down/top/bottom command. Renumbers everything to keep zindex values
+// small and contiguous rather than accumulating gaps or drift over time.
+export function setItemsOrder(ids) {
+    ids.forEach((id, index) => {
+        alasql('UPDATE items SET zindex = ? WHERE id = ?', [index, id]);
+    });
+    markDirty();
 }
 
 // width is only meaningful for the text tool (a Textbox's independent wrap

@@ -40,6 +40,15 @@ export function getCanvas() {
     return canvas;
 }
 
+// Box/circle/line/arrow captions aren't tagged with the item's id (they're
+// a separate synced object, not a group child — see the comment above
+// SHAPE_LABEL_OFFSET) so callers that need to keep one paired with its shape
+// in the stacking order (layer up/down/top/bottom) can't find it via
+// getObjectById.
+export function getShapeLabel(id) {
+    return shapeLabels.get(id) || null;
+}
+
 export function getObjectById(id) {
     return canvas.getObjects().find((obj) => obj.id === id) || null;
 }
@@ -517,13 +526,33 @@ export function removeItemObject(id) {
     removeShapeLabel(id);
 }
 
-// Full redraw — only for initial load and show switching.
+// Full redraw — only for initial load and show switching. `items` must
+// already be in bottom-to-top stacking order (store.getItems() orders by
+// zindex) — each renderItem() call resolves whenever its own SVG happens to
+// load, not in array order, so without this explicit re-sort afterwards the
+// on-screen stacking order would depend on SVG load timing instead of the
+// order the user actually set.
 export async function renderAll(items) {
     renderTokens.clear();
     shapeLabels.clear(); // canvas.clear() below destroys the label objects themselves
     canvas.clear();
-    drawGrid();
+    drawGrid(); // occupies index 0; items are restacked starting at index 1
     await Promise.all(items.map((item) => renderItem(item)));
+    let cursor = 1;
+    items.forEach((item) => {
+        const obj = getObjectById(item.id);
+        if (!obj) return;
+        canvas.moveObjectTo(obj, cursor);
+        cursor += 1;
+        // Keep a box/circle/line/arrow's caption paired right above it — it's
+        // a sibling canvas object, not a group child, so it isn't otherwise
+        // touched by this re-sort (see getShapeLabel).
+        const label = shapeLabels.get(item.id);
+        if (label) {
+            canvas.moveObjectTo(label, cursor);
+            cursor += 1;
+        }
+    });
     canvas.requestRenderAll();
 }
 

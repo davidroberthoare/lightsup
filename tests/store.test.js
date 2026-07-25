@@ -68,6 +68,34 @@ test('items are scoped to their show', () => {
     assert.equal(store.getItems(show2.id).length, 2);
 });
 
+test('new items default to the top of their own show\'s stack, independent of other shows', () => {
+    const show2 = store.createShow({ name: 'Second Show' });
+    const a = store.createItem({ show_id: 'default', type: 'fixture' });
+    const b = store.createItem({ show_id: 'default', type: 'fixture' });
+    // A show with items already at high zindex must not push a *different*
+    // show's next item's default any higher than its own stack warrants.
+    const other = store.createItem({ show_id: show2.id, type: 'fixture' });
+
+    assert.equal(a.zindex, 0);
+    assert.equal(b.zindex, 1);
+    assert.equal(other.zindex, 0);
+    assert.deepEqual(store.getItems('default').map((i) => i.id), [a.id, b.id]);
+});
+
+test('setItemsOrder renumbers zindex to match the given order, and getItems reflects it', () => {
+    const a = store.createItem({ show_id: 'default', type: 'fixture' });
+    const b = store.createItem({ show_id: 'default', type: 'fixture' });
+    const c = store.createItem({ show_id: 'default', type: 'fixture' });
+    assert.deepEqual(store.getItems('default').map((i) => i.id), [a.id, b.id, c.id]);
+
+    store.setItemsOrder([c.id, a.id, b.id]);
+
+    assert.deepEqual(store.getItems('default').map((i) => i.id), [c.id, a.id, b.id]);
+    assert.equal(store.getItem(c.id).zindex, 0);
+    assert.equal(store.getItem(a.id).zindex, 1);
+    assert.equal(store.getItem(b.id).zindex, 2);
+});
+
 test('save/load roundtrip preserves shows and items in the versioned format', () => {
     const show2 = store.createShow({ name: 'Second Show' });
     const item = store.createItem({ show_id: show2.id, type: 'fixture', shape: 'par_64', x: 42, gel: 'L201' });
@@ -199,6 +227,22 @@ test('legacy saves and v2 saves without updated_at are migrated to null, not lef
     });
     store.loadData(v2);
     assert.equal(store.getShow('default').updated_at, null);
+});
+
+test('items saved before zindex existed fall back to their saved array order, not all tied at 0', () => {
+    const preZindex = new FakeStorage({
+        [store.STORAGE_KEY]: JSON.stringify({
+            version: 5,
+            shows: [{ id: 'default', name: 'Old Show', company: '', venue: '', designer: '', date: '' }],
+            items: [
+                { id: 'first', show_id: 'default', type: 'fixture' },
+                { id: 'second', show_id: 'default', type: 'fixture' },
+                { id: 'third', show_id: 'default', type: 'fixture' },
+            ],
+        }),
+    });
+    store.loadData(preZindex);
+    assert.deepEqual(store.getItems('default').map((i) => i.id), ['first', 'second', 'third']);
 });
 
 test('deleteShow removes the show and its items, but not other shows\' items', () => {
