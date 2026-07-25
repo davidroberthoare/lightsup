@@ -317,7 +317,10 @@ canvas.on('mouse:wheel', (opt) => {
     const { deltaY, offsetX, offsetY } = opt.e;
     if (opt.e.ctrlKey) {
         let zoom = canvas.getZoom();
-        zoom *= 1.01 ** -deltaY;
+        // /2 halves zoom sensitivity per wheel tick — trackpad ctrl-scroll
+        // deltaY can be large per event, making the un-dampened rate feel
+        // twitchy on some machines.
+        zoom *= 1.01 ** (-deltaY / 8);
         if (zoom > ZOOM_MAX) zoom = ZOOM_MAX;
         if (zoom < ZOOM_MIN) zoom = ZOOM_MIN;
         canvas.zoomToPoint({ x: offsetX, y: offsetY }, zoom);
@@ -343,6 +346,18 @@ canvas.on('mouse:down', (opt) => {
         button: opt.e.button,
         target: opt.target || null,
     };
+    // Fabric only finalizes a drag/scale/rotate via a mouseup it actually
+    // receives on the canvas element itself — a fast or wide drag easily
+    // ends with the pointer over the navbar, the properties panel, or the
+    // footer instead (the panel especially, since it now defaults to
+    // expanded and overlaps the canvas). When that happens the mouseup goes
+    // to whatever's on top instead of the canvas, so Fabric never fires its
+    // own 'mouse:up'/'object:modified' — the transform (and, for a
+    // multi-selection, the whole ActiveSelection) is left stuck mid-gesture
+    // with unconverted relative coordinates, no cursor reset, and no way to
+    // finish it. Making that chrome click-through for the gesture's duration
+    // guarantees the release always reaches the canvas instead.
+    $('.navbar, #floating-panel, #footer').css('pointer-events', 'none');
 });
 
 canvas.on('mouse:move', (opt) => {
@@ -362,6 +377,7 @@ canvas.on('mouse:move', (opt) => {
 
 canvas.on('mouse:up', (opt) => {
     isPanning = false;
+    $('.navbar, #floating-panel, #footer').css('pointer-events', '');
     if (!downInfo) return;
     const info = downInfo;
     downInfo = null;
@@ -1093,6 +1109,15 @@ $(document).keydown((e) => {
         closeLoadShowModal();
         switchMode('default', null, null);
     }
+});
+
+// Belt and suspenders for the pointer-events toggle above: a window-level
+// listener restores it on literally any mouseup, bubbling or not, even one
+// Fabric's own canvas-scoped listener never sees (e.g. the button released
+// outside the browser viewport entirely) — so the chrome can never be left
+// stuck click-through.
+window.addEventListener('mouseup', () => {
+    $('.navbar, #floating-panel, #footer').css('pointer-events', '');
 });
 
 window.addEventListener('beforeunload', (e) => {

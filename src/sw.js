@@ -50,17 +50,16 @@ const CORE_URLS = [
     '/img/icons/favicon-32.png',
 ];
 
-// Fetched once per worker lifetime and reused; the worker can be killed and
-// respawned by the browser between events, so this is re-populated lazily
-// rather than assumed to survive.
-let configPromise = null;
+// Deliberately not memoized: sw.js itself doesn't change when pwa.json's
+// toggle flips, so the browser won't necessarily install a fresh worker, and
+// this same running thread can otherwise persist across many reloads
+// (especially with DevTools open). offlineCacheEnabled must be re-checked
+// from disk on every call so toggling it off actually takes effect
+// immediately rather than only after the worker happens to restart.
 function loadConfig() {
-    if (!configPromise) {
-        configPromise = fetch(CONFIG_URL, { cache: 'no-store' })
-            .then((res) => res.json())
-            .catch(() => ({ cacheVersion: 'dev', offlineCacheEnabled: false }));
-    }
-    return configPromise;
+    return fetch(CONFIG_URL, { cache: 'no-store' })
+        .then((res) => res.json())
+        .catch(() => ({ cacheVersion: 'dev', offlineCacheEnabled: false }));
 }
 
 function cacheNameFor(version) {
