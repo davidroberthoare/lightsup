@@ -455,9 +455,13 @@ let pasteOffsetCount = 0;
 const PASTE_OFFSET = 20; // scene units per repeated paste, so a paste-paste-paste run fans out visibly
 
 function refreshEditMenuState() {
-    const hasSelection = canvas.getActiveObjects().length > 0;
-    $('#cut_item, #copy_item').toggleClass('is-disabled', !hasSelection);
+    const selectedCount = canvas.getActiveObjects().length;
+    $('#cut_item, #copy_item').toggleClass('is-disabled', selectedCount === 0);
     $('#paste_item').toggleClass('is-disabled', clipboard.length === 0);
+    $('#align_top, #align_middle, #align_bottom, #align_left, #align_center, #align_right')
+        .toggleClass('is-disabled', selectedCount < 2);
+    $('#distribute_horizontal, #distribute_vertical, #distribute_rotation_horizontal, #distribute_rotation_vertical')
+        .toggleClass('is-disabled', selectedCount < 3);
 }
 
 function copySelected() {
@@ -544,6 +548,177 @@ async function pasteClipboard() {
 $('#cut_item').click(cutSelected);
 $('#copy_item').click(copySelected);
 $('#paste_item').click(pasteClipboard);
+
+// ---------------------------------------------------------------------------
+// Align / distribute
+//
+// Both work from each object's axis-aligned bounding box in scene coordinates
+// (getBoundingRect()) rather than its raw left/top, so rotated and scaled
+// objects (and Textbox's center origin) align correctly without per-type
+// branching. Locked items are excluded entirely — same as delete/cut, they
+// accept no change and don't anchor the target either.
+
+// A multi-selection reports child left/top relative to the selection group
+// (see the object:modified handler above); discard it first so this reads
+// and writes each object's own absolute placement. Returns both the full
+// selection (for restoring it unchanged if there's nothing to do, or
+// reselecting once the movable ones have been repositioned) and the locked-
+// filtered subset actually eligible to move.
+function selectionForEdit() {
+    const all = canvas.getActiveObjects();
+    canvas.discardActiveObject();
+    const movable = all.filter((obj) => {
+        const item = store.getItem(obj.id);
+        return !(item && item.locked);
+    });
+    return { all, movable };
+}
+
+function reselect(objs) {
+    if (objs.length === 1) {
+        canvas.setActiveObject(objs[0]);
+    } else if (objs.length > 1) {
+        canvas.setActiveObject(new fabric.ActiveSelection(objs, { canvas }));
+    }
+    canvas.requestRenderAll();
+}
+
+function alignSelection(edge) {
+    const { all, movable: objs } = selectionForEdit();
+    if (objs.length < 2) {
+        reselect(all);
+        return;
+    }
+
+    const boxes = objs.map((obj) => ({ obj, box: obj.getBoundingRect() }));
+    const left = Math.min(...boxes.map(({ box }) => box.left));
+    const right = Math.max(...boxes.map(({ box }) => box.left + box.width));
+    const top = Math.min(...boxes.map(({ box }) => box.top));
+    const bottom = Math.max(...boxes.map(({ box }) => box.top + box.height));
+    const centerX = (left + right) / 2;
+    const centerY = (top + bottom) / 2;
+
+    const moves = boxes.map(({ obj, box }) => {
+        let dx = 0;
+        let dy = 0;
+        switch (edge) {
+            case 'left': dx = left - box.left; break;
+            case 'right': dx = right - (box.left + box.width); break;
+            case 'center': dx = centerX - (box.left + box.width / 2); break;
+            case 'top': dy = top - box.top; break;
+            case 'bottom': dy = bottom - (box.top + box.height); break;
+            case 'middle': dy = centerY - (box.top + box.height / 2); break;
+        }
+        return { obj, dx, dy };
+    }).filter(({ dx, dy }) => dx || dy);
+
+    if (moves.length > 0) {
+        store.checkpoint();
+        moves.forEach(({ obj, dx, dy }) => {
+            obj.set({ left: obj.left + dx, top: obj.top + dy });
+            obj.setCoords();
+            persistObject(obj);
+        });
+        refreshHistoryButtons();
+    }
+
+    reselect(all);
+    refreshEditMenuState();
+}
+
+// Equalizes the gaps between bounding-box edges along one axis, keeping the
+// first and last object (by that axis) fixed in place.
+function distributeSelection(axis) {
+    const { all, movable: objs } = selectionForEdit();
+    if (objs.length < 3) {
+        reselect(all);
+        return;
+    }
+
+    const key = axis === 'x' ? 'left' : 'top';
+    const size = axis === 'x' ? 'width' : 'height';
+    const boxes = objs
+        .map((obj) => ({ obj, box: obj.getBoundingRect() }))
+        .sort((a, b) => a.box[key] - b.box[key]);
+
+    const first = boxes[0].box;
+    const last = boxes[boxes.length - 1].box;
+    const span = (last[key] + last[size]) - first[key];
+    const sumSizes = boxes.reduce((sum, { box }) => sum + box[size], 0);
+    const gap = (span - sumSizes) / (boxes.length - 1);
+
+    let cursor = first[key];
+    const moves = [];
+    boxes.forEach(({ obj, box }) => {
+        const delta = cursor - box[key];
+        if (delta) moves.push({ obj, delta });
+        cursor += box[size] + gap;
+    });
+
+    if (moves.length > 0) {
+        store.checkpoint();
+        moves.forEach(({ obj, delta }) => {
+            obj.set({ [key]: obj[key] + delta });
+            obj.setCoords();
+            persistObject(obj);
+        });
+        refreshHistoryButtons();
+    }
+
+    reselect(all);
+    refreshEditMenuState();
+}
+
+// Spreads rotation angle linearly across the selection, ordered by position
+// along the given axis. The first and last object (by that axis) keep their
+// current angle as the two ends of the spread; everything in between is
+// interpolated by its rank in that order.
+function distributeRotation(axis) {
+    const { all, movable: objs } = selectionForEdit();
+    if (objs.length < 3) {
+        reselect(all);
+        return;
+    }
+
+    const ordered = objs
+        .map((obj) => {
+            const box = obj.getBoundingRect();
+            return { obj, center: axis === 'x' ? box.left + box.width / 2 : box.top + box.height / 2 };
+        })
+        .sort((a, b) => a.center - b.center)
+        .map(({ obj }) => obj);
+
+    const startAngle = ordered[0].angle || 0;
+    const endAngle = ordered[ordered.length - 1].angle || 0;
+    const step = (endAngle - startAngle) / (ordered.length - 1);
+
+    if (step) {
+        store.checkpoint();
+        ordered.forEach((obj, i) => {
+            if (i === 0 || i === ordered.length - 1) return;
+            obj.set({ angle: startAngle + step * i });
+            obj.setCoords();
+            render.applyTextFlip(obj);
+            persistObject(obj);
+        });
+        refreshHistoryButtons();
+    }
+
+    reselect(all);
+    refreshEditMenuState();
+}
+
+$('#align_top').click(() => alignSelection('top'));
+$('#align_middle').click(() => alignSelection('middle'));
+$('#align_bottom').click(() => alignSelection('bottom'));
+$('#align_left').click(() => alignSelection('left'));
+$('#align_center').click(() => alignSelection('center'));
+$('#align_right').click(() => alignSelection('right'));
+
+$('#distribute_horizontal').click(() => distributeSelection('x'));
+$('#distribute_vertical').click(() => distributeSelection('y'));
+$('#distribute_rotation_horizontal').click(() => distributeRotation('x'));
+$('#distribute_rotation_vertical').click(() => distributeRotation('y'));
 
 // ---------------------------------------------------------------------------
 // Menus and keyboard
