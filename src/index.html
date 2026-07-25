@@ -19,7 +19,7 @@
 
   <nav class="navbar" role="navigation" aria-label="main navigation">
     <div class="navbar-brand">
-      <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarBasicExample">
+      <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="main_nav">
         <span aria-hidden="true"></span>
         <span aria-hidden="true"></span>
         <span aria-hidden="true"></span>
@@ -27,7 +27,7 @@
       </a>
     </div>
 
-    <div id="navbarBasicExample" class="navbar-menu">
+    <div id="main_nav" class="navbar-menu">
       <div class="navbar-start">
         <div class="navbar-item has-dropdown is-hoverable">
           <a class="navbar-link">
@@ -265,6 +265,8 @@
 
         </div>
 
+        <a class="navbar-item" id="toggle_background_layer">Edit Background</a>
+
         <a class="navbar-item" href="report.html" target="_blank">Reports</a>
 
       </div>
@@ -333,6 +335,19 @@
               <div class="control">
                 <label class="checkbox">
                   <input name="locked" type="checkbox">
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field is-horizontal">
+          <div class="field-label is-small"><label class="label">Background</label></div>
+          <div class="field-body">
+            <div class="field">
+              <div class="control">
+                <label class="checkbox">
+                  <input name="layer" type="checkbox">
                 </label>
               </div>
             </div>

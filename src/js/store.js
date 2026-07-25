@@ -10,7 +10,7 @@ import { randomId } from './util.js';
 
 const alasql = globalThis.alasql;
 
-export const DATA_VERSION = 6;
+export const DATA_VERSION = 7;
 export const STORAGE_KEY = 'lightsup:data';
 const CURRENT_SHOW_KEY = 'current_show_id';
 
@@ -34,13 +34,17 @@ export const DEFAULT_SHOW = Object.freeze({
 
 // Only these columns may be set through the generic field-update helpers;
 // anything else is a programming error, not data.
-const ITEM_FIELDS = new Set(['x', 'y', 'angle', 'scalex', 'scaley', 'width', 'position', 'number', 'label', 'channel', 'dimmer', 'gel', 'locked']);
+const ITEM_FIELDS = new Set(['x', 'y', 'angle', 'scalex', 'scaley', 'width', 'position', 'number', 'label', 'channel', 'dimmer', 'gel', 'locked', 'layer']);
 const SHOW_FIELDS = new Set(['name', 'company', 'venue', 'designer', 'date']);
 
-const ITEM_COLUMNS = ['id', 'show_id', 'type', 'shape', 'x', 'y', 'angle', 'scalex', 'scaley', 'width', 'position', 'number', 'label', 'channel', 'dimmer', 'gel', 'locked', 'zindex'];
+// 'foreground' is the normal working layer (fixtures, positions, most
+// shapes); 'background' is for reference/set-piece drawing that shouldn't
+// compete for clicks with the lighting layout — see main.js's
+// backgroundEditMode and render.js's setActiveLayer.
+const ITEM_COLUMNS = ['id', 'show_id', 'type', 'shape', 'x', 'y', 'angle', 'scalex', 'scaley', 'width', 'position', 'number', 'label', 'channel', 'dimmer', 'gel', 'locked', 'zindex', 'layer'];
 const ITEM_DEFAULTS = {
     show_id: '', type: '', shape: '', x: 0, y: 0, angle: 0, scalex: 1, scaley: 1, width: null,
-    position: '', number: null, label: '', channel: '', dimmer: '', gel: '', locked: false, zindex: 0,
+    position: '', number: null, label: '', channel: '', dimmer: '', gel: '', locked: false, zindex: 0, layer: 'foreground',
 };
 
 // ---------------------------------------------------------------------------
@@ -95,7 +99,8 @@ export function initDB(wipe) {
         dimmer STRING,
         gel STRING,
         locked BOOLEAN,
-        zindex INT
+        zindex INT,
+        layer STRING
         )`);
 }
 
@@ -152,6 +157,7 @@ function migrateLegacy(storage) {
 function normalizeItemFields(item) {
     if (item.width === undefined) item.width = null;
     if (item.locked === undefined) item.locked = false;
+    if (item.layer === undefined) item.layer = 'foreground';
     return item;
 }
 

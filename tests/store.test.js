@@ -245,6 +245,26 @@ test('items saved before zindex existed fall back to their saved array order, no
     assert.deepEqual(store.getItems('default').map((i) => i.id), ['first', 'second', 'third']);
 });
 
+test('items default to the foreground layer, and can be moved to background', () => {
+    const item = store.createItem({ show_id: 'default', type: 'shape', shape: 'box' });
+    assert.equal(item.layer, 'foreground');
+
+    store.updateItemField(item.id, 'layer', 'background');
+    assert.equal(store.getItem(item.id).layer, 'background');
+});
+
+test('items saved before the background layer existed default to foreground, not undefined', () => {
+    const preLayer = new FakeStorage({
+        [store.STORAGE_KEY]: JSON.stringify({
+            version: 6,
+            shows: [{ id: 'default', name: 'Old Show', company: '', venue: '', designer: '', date: '' }],
+            items: [{ id: 'abc', show_id: 'default', type: 'shape', shape: 'box' }],
+        }),
+    });
+    store.loadData(preLayer);
+    assert.equal(store.getItem('abc').layer, 'foreground');
+});
+
 test('deleteShow removes the show and its items, but not other shows\' items', () => {
     const show2 = store.createShow({ name: 'Second Show' });
     store.createItem({ show_id: 'default', type: 'fixture' });

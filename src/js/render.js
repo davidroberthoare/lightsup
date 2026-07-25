@@ -352,6 +352,7 @@ function renderShapeLabel(mainObj, item) {
         selectable: false,
         evented: false,
         itemType: 'label',
+        opacity: mainObj.opacity, // matches whatever applyLayerState just set on the shape itself
     });
     shapeLabels.set(item.id, label);
     canvas.add(label);
@@ -474,6 +475,50 @@ export function setItemLocked(id, locked, itemType) {
 }
 
 // ---------------------------------------------------------------------------
+// Background layer
+//
+// Items are tagged 'foreground' or 'background' (see store.js). Exactly one
+// of those is "active" at a time (main.js's backgroundEditMode) — active-
+// layer items are fully interactive, the other layer is dimmed and can't be
+// clicked at all (evented false, not just unselectable), so it never
+// competes for clicks with whatever the user is actually working on. Every
+// object is tagged with its own itemLayer at render time so this can be
+// re-applied without needing to consult the store.
+const INACTIVE_LAYER_OPACITY = 0.3;
+let currentLayer = 'foreground';
+
+function applyLayerState(obj) {
+    const active = obj.itemLayer === currentLayer;
+    const opacity = active ? 1 : INACTIVE_LAYER_OPACITY;
+    obj.set({ opacity, selectable: active, evented: active });
+    if (obj.itemType === 'shape') {
+        const label = shapeLabels.get(obj.id);
+        if (label) label.set('opacity', opacity);
+    }
+}
+
+// Switches which layer is interactive, re-applying to everything already on
+// the canvas (a full redraw isn't needed — this is purely an interaction/
+// opacity toggle, not a data change).
+export function setActiveLayer(layer) {
+    currentLayer = layer;
+    canvas.getObjects().forEach((obj) => {
+        if (obj.id) applyLayerState(obj);
+    });
+    canvas.requestRenderAll();
+}
+
+// Moves a single already-rendered item between layers (the inspector's
+// "Background" checkbox) without a full redraw.
+export function setItemLayer(id, layer) {
+    const obj = getObjectById(id);
+    if (!obj) return;
+    obj.itemLayer = layer;
+    applyLayerState(obj);
+    canvas.requestRenderAll();
+}
+
+// ---------------------------------------------------------------------------
 // Incremental rendering
 
 // Creates (or replaces) the canvas object for a store item.
@@ -506,9 +551,11 @@ export async function renderItem(item) {
         scaleY: item.scaley || 1,
         angle: item.angle || 0,
         id: item.id,
+        itemLayer: item.layer || 'foreground',
     });
     applyTextFlip(group);
     applyLockState(group, item.locked, INHERENT_SCALE_LOCK[item.type]);
+    applyLayerState(group);
     canvas.add(group);
     if (group.adjustScaling) group.adjustScaling();
     if (item.type === 'shape') renderShapeLabel(group, item);

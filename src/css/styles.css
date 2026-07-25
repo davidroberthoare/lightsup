@@ -56,6 +56,50 @@ body {
   }
   /* END NESTED DROPDOWN */
 
+/* MOBILE MENU (below Bulma's 1024px desktop breakpoint, when the burger
+   shows). Both Bulma's own .navbar-dropdown and this app's .nested.dropdown
+   flyout above are built around :hover, which doesn't exist on touch — on
+   mobile they're driven as closed-by-default accordions instead, toggled by
+   .is-active classes the burger/menu JS in main.js adds on tap. */
+@media screen and (max-width: 1023px) {
+    .navbar-item.has-dropdown > .navbar-dropdown {
+        display: none;
+        position: static;
+        box-shadow: none;
+        border: none;
+        margin: 0;
+        padding-left: 0.75rem;
+    }
+    .navbar-item.has-dropdown.is-active > .navbar-dropdown {
+        display: block;
+    }
+    .navbar-item.has-dropdown.is-active > .navbar-link::after {
+        transform: rotate(135deg);
+    }
+
+    .nested.dropdown > .dropdown-menu {
+        display: none;
+        position: static;
+        margin-left: 1rem;
+        top: auto;
+        box-shadow: none;
+        border: none;
+    }
+    .nested.dropdown.is-active > .dropdown-menu {
+        display: block;
+    }
+    .nested.dropdown > .navbar-item {
+        justify-content: space-between;
+        padding-inline-end: 1rem;
+    }
+    .nested.dropdown .dropdown-content {
+        padding: 0.25rem 0;
+    }
+    .nested.dropdown .dropdown-item {
+        white-space: normal;
+    }
+}
+
 
 #menu {
     height: var(--bar_height);

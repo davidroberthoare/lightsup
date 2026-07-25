@@ -20,14 +20,26 @@ const SPEED_NUMBER_BIG_STEP = 10;
 
 // Which inspector fields apply to which item type. 'locked' applies to all —
 // it's the one field a locked object still accepts (see the change handler).
+// 'layer' ('Background' checkbox) also applies to every type, but — unlike
+// 'locked' — a locked item does not accept a layer change either; moving
+// layers is a real edit, not an unlock-style escape hatch.
 const INSPECTOR_FIELDS = {
-    fixture: ['label', 'dimmer', 'channel', 'gel', 'locked'],
-    position: ['label', 'locked'],
-    shape: ['label', 'locked'],
+    fixture: ['label', 'dimmer', 'channel', 'gel', 'locked', 'layer'],
+    position: ['label', 'locked', 'layer'],
+    shape: ['label', 'locked', 'layer'],
 };
 
 const MODE = { action: 'default', type: null, subtype: null };
 let currentShowId = null;
+
+// Which layer is currently interactive — see the "Background layer" section
+// below. A fresh/switched show always comes up with the normal (foreground)
+// layer active; this is session UI state, not saved show data.
+let backgroundEditMode = false;
+
+function activeLayerName() {
+    return backgroundEditMode ? 'background' : 'foreground';
+}
 
 const container = document.getElementById('container');
 const canvas = render.initCanvas(document.getElementById('paper'), container);
@@ -38,6 +50,9 @@ const canvas = render.initCanvas(document.getElementById('paper'), container);
 function switchShow(id) {
     currentShowId = id;
     store.setCurrentShowId(id);
+    backgroundEditMode = false;
+    $('#toggle_background_layer').removeClass('selected');
+    render.setActiveLayer('foreground');
     render.renderAll(store.getItems(id));
     updateShowInspector();
     pasteOffsetCount = 0; // a fresh show is a fresh context for the paste-stagger offset
@@ -128,14 +143,18 @@ function switchMode(mode, type, subtype) {
     MODE.type = type;
     MODE.subtype = subtype;
 
-    $('.navbar-item').removeClass('selected');
+    // #toggle_background_layer isn't a MODE — it's an independent toggle
+    // that stays on/off across drawing-tool switches — so it's excluded here.
+    $('.navbar-item').not('#toggle_background_layer').removeClass('selected');
     canvas.defaultCursor = 'pointer';
     $('#speed_number_badge').hide();
 
-    // Restore normal selection once speed-numbering ends (see the mode's own
-    // branch below for why it's turned off in the first place).
+    // Restore selectability once speed-numbering ends — re-applying the
+    // current layer's state rather than unconditionally re-enabling
+    // everything, so this doesn't fight with background-edit mode leaving
+    // the inactive layer non-selectable (see the "Background layer" section).
     if (wasSpeedNumber && mode !== 'speed-number') {
-        setAllSelectable(true);
+        render.setActiveLayer(activeLayerName());
     }
 
     if (mode === 'insert') {
@@ -157,6 +176,25 @@ function switchMode(mode, type, subtype) {
 
 function setAllSelectable(selectable) {
     canvas.getObjects().forEach((obj) => { obj.selectable = selectable; });
+}
+
+// ---------------------------------------------------------------------------
+// Background layer
+//
+// A Word header/footer-style toggle: exactly one layer is "active" at a
+// time. The active layer is fully interactive; the other one is dimmed and
+// can't be clicked at all, so set-piece drawing (background) never competes
+// for clicks with the lighting layout (foreground), or vice versa. New
+// items are created on whichever layer is currently active (see the insert
+// mouse:up handler); existing items can be moved between layers via the
+// inspector's "Background" checkbox.
+function toggleBackgroundEditMode() {
+    backgroundEditMode = !backgroundEditMode;
+    canvas.discardActiveObject(); // a selection from the layer just deactivated no longer applies
+    $('#toggle_background_layer').toggleClass('selected', backgroundEditMode);
+    render.setActiveLayer(activeLayerName());
+    clearInspector();
+    refreshEditMenuState();
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +384,7 @@ canvas.on('mouse:up', (opt) => {
             // so give it a starting caption the way other item types get one
             // for free from their symbol/shape.
             label: MODE.type === 'shape' && MODE.subtype === 'text' ? 'Text' : undefined,
+            layer: activeLayerName(),
         });
         render.renderItem(item);
         refreshHistoryButtons();
@@ -423,6 +462,10 @@ function updateInspector(ids) {
         if ($field.attr('type') === 'checkbox') {
             if (common[key] === '*') {
                 $field.prop('indeterminate', true);
+            } else if (key === 'layer') {
+                // 'layer' is a 'foreground'/'background' string, not a bool —
+                // truthiness alone would show every item as checked.
+                $field.prop('checked', common[key] === 'background');
             } else {
                 $field.prop('checked', !!common[key]);
             }
@@ -489,7 +532,10 @@ function deleteSelected() {
 $('#inspector input').change(function () {
     const name = $(this).attr('name');
     const isCheckbox = $(this).attr('type') === 'checkbox';
-    const value = isCheckbox ? $(this).prop('checked') : $(this).val();
+    const rawValue = isCheckbox ? $(this).prop('checked') : $(this).val();
+    // 'layer' is stored as a 'foreground'/'background' string, not the raw
+    // checkbox boolean.
+    const value = name === 'layer' ? (rawValue ? 'background' : 'foreground') : rawValue;
     store.checkpoint();
     canvas.getActiveObjects().forEach((obj) => {
         const item = store.getItem(obj.id);
@@ -501,10 +547,21 @@ $('#inspector input').change(function () {
         store.updateItemField(obj.id, name, value);
         if (name === 'locked') {
             render.setItemLocked(obj.id, value, item.type);
+        } else if (name === 'layer') {
+            render.setItemLayer(obj.id, value);
         } else {
             render.updateItemText(obj.id, name, value);
         }
     });
+    // Moving the selection to the inactive layer just made it non-selectable
+    // out from under itself — drop the (now stale) selection rather than
+    // leave selection handles on an object that can no longer be reselected.
+    if (name === 'layer' && value !== activeLayerName()) {
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+        clearInspector();
+        refreshEditMenuState();
+    }
     refreshHistoryButtons();
 });
 
@@ -933,8 +990,63 @@ $('#menu_insert').on('click', 'a[data-type]', function () {
     switchMode('insert', $(this).attr('data-type'), $(this).attr('data-subtype'));
 });
 
+$('#toggle_background_layer').click(toggleBackgroundEditMode);
+
 $('#toggle-panel').click(() => {
     $('#floating-panel').toggleClass('expanded');
+});
+
+// Bulma's navbar-burger is markup/CSS only — it doesn't wire up its own
+// click-to-toggle, that's left to the page. Toggles both the burger itself
+// (for its own active styling) and the menu it points at via data-target.
+$('.navbar-burger').click(function () {
+    const opening = !$(this).hasClass('is-active');
+    $(this).toggleClass('is-active');
+    $('#' + $(this).data('target')).toggleClass('is-active');
+    // Start from fully collapsed every time the menu reopens, rather than
+    // however it happened to be left last time.
+    if (!opening) $('.navbar-item.has-dropdown, .nested.dropdown').removeClass('is-active');
+});
+
+// On mobile, both Bulma's own dropdowns (File/Edit/Insert) and this app's
+// nested flyout submenus (Align/Distribute/... under Edit, Fixtures/... under
+// Insert) are built around :hover, which doesn't exist on touch — see the
+// matching CSS in styles.css. Below the desktop breakpoint they're driven as
+// closed-by-default accordions instead; above it, hover already works and
+// these handlers deliberately do nothing so desktop behavior is untouched.
+function isMobileMenu() {
+    return window.matchMedia('(max-width: 1023px)').matches;
+}
+
+$('.navbar-item.has-dropdown > .navbar-link').click(function (e) {
+    if (!isMobileMenu()) return;
+    e.preventDefault();
+    const $item = $(this).parent();
+    const wasActive = $item.hasClass('is-active');
+    $('.navbar-item.has-dropdown').removeClass('is-active'); // only one top-level section open at a time
+    $item.toggleClass('is-active', !wasActive);
+});
+
+$('.nested.dropdown > .navbar-item').click(function (e) {
+    if (!isMobileMenu()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const $nested = $(this).parent();
+    const wasActive = $nested.hasClass('is-active');
+    $nested.siblings('.nested.dropdown').removeClass('is-active'); // only one flyout open at a time within its parent
+    $nested.toggleClass('is-active', !wasActive);
+});
+
+// Picking an actual action (as opposed to opening a File/Edit/Insert or
+// Align/Distribute/... header) closes the whole mobile menu, the way a
+// mobile nav is expected to behave — otherwise the user has to go dismiss it
+// by hand after every tap.
+$('#main_nav').on('click', 'a', function () {
+    if (!isMobileMenu()) return;
+    const isTrigger = $(this).hasClass('navbar-link') || $(this).siblings('.dropdown-menu').length > 0;
+    if (isTrigger) return;
+    $('.navbar-burger, #main_nav').removeClass('is-active');
+    $('.navbar-item.has-dropdown, .nested.dropdown').removeClass('is-active');
 });
 
 $('#undo_item').click(performUndo);
